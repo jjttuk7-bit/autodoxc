@@ -1,0 +1,8 @@
+{
+  "doc_type": {
+    "id": "foreign-worker-employment-plan",
+    "ko_name": "전문 외국 인력 고용 계획서",
+    "domain": "permit",
+    "taxonomy_path": ["고용", "외국인", "전문인력"]
+  }
+}

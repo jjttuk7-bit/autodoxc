@@ -1,0 +1,12 @@
+{
+  "skeleton": [
+    {"id": "sec_1", "title": {"__contains": "고용 대상"}},
+    {"id": "sec_2", "title": {"__contains": "고용 사유"}},
+    {"id": "sec_3", "title": {"__contains": "기술도입"}},
+    {"id": "sec_4", "title": {"__contains": "활용 계획"}},
+    {"id": "sec_5", "title": {"__contains": "기타"}}
+  ],
+  "composition_meta": {
+    "primary_source": {"kind": "llm_inference"}
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "facts": [
+    {"field_id": "quant:년", "value": 1, "source": "explicit"},
+    {"field_id": "quant:회", "value": 6, "source": "explicit"},
+    {"field_id": "quant:명", "value": 1, "source": "explicit"},
+    {"field_id": "industry", "source": "explicit"},
+    {"field_id": "core_skill", "source": "explicit"}
+  ]
+}

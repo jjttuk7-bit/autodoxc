@@ -1,0 +1,10 @@
+{
+  "doc_type": {
+    "id": "foreign-worker-employment-plan",
+    "domain": "permit"
+  },
+  "confidence": 0.92,
+  "signals": [
+    {"__contains": "외국인"}
+  ]
+}

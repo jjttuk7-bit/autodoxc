@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  /* 5가지 status 토큰 — 03-ui-model.md §2.1 */
+  --color-status-confirmed: #111827;       /* 기본 본문 */
+  --color-status-inferred: #fef9c3;         /* 옅은 노랑 */
+  --color-status-inferred-line: #facc15;
+  --color-status-defaulted: #9ca3af;         /* 옅은 회색 */
+  --color-status-evidence: #3b82f6;          /* 파란 막대 */
+  --color-status-empty: #d1d5db;             /* 점선 박스 */
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR",
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  background: #f9fafb;
+  color: #111827;
+}
