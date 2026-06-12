@@ -1,6 +1,8 @@
 """autodoxc backend entry."""
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,13 +15,26 @@ settings = get_settings()
 
 app = FastAPI(
     title="autodoxc backend",
-    version="0.0.3",
-    description=f"B1-1 sessions API — LLM mode: {settings.llm_mode}",
+    version="0.0.4",
+    description=f"deployed backend — LLM mode: {settings.llm_mode}",
 )
 
+# CORS — 로컬 dev + Vercel 도메인 + 추가 도메인은 환경변수로 확장
+_extra_origins = [
+    o.strip()
+    for o in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://autodoxc.vercel.app",
+        *_extra_origins,
+    ],
+    # Vercel 프리뷰 도메인(autodoxc-git-*.vercel.app, autodoxc-<sha>.vercel.app)
+    allow_origin_regex=r"^https://autodoxc-[a-z0-9\-]+(\-[a-z0-9\-]+)*\.vercel\.app$",
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],

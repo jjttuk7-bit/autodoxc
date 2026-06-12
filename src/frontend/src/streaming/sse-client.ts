@@ -1,10 +1,11 @@
+import { apiUrl } from "../api/base";
 import type { StreamEvent } from "../api/types";
 
 export async function connectStream(
   sessionId: string,
   onEvent: (e: StreamEvent) => void
 ): Promise<void> {
-  const res = await fetch(`/api/sessions/${sessionId}/stream`);
+  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/stream`));
   if (!res.ok || !res.body) {
     throw new Error(`stream failed: ${res.status}`);
   }
