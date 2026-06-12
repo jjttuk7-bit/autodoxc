@@ -22,4 +22,11 @@ async def _stream(session_id: str, user_input: str) -> AsyncGenerator[dict, None
 
 
 def stream_endpoint(session_id: str = "demo") -> EventSourceResponse:
-    return EventSourceResponse(_stream(session_id, DEMO_USER_INPUT))
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+    return EventSourceResponse(
+        _stream(session_id, DEMO_USER_INPUT), headers=headers
+    )

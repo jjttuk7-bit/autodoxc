@@ -53,7 +53,16 @@ async def stream_session(session_id: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"session {session_id} not found",
         )
-    return EventSourceResponse(_orchestrate(session_id, user_input))
+    # Railway/nginx 등 reverse proxy의 응답 버퍼링 비활성화 →
+    # SSE 청크가 즉시 클라이언트에 흘러감
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+    return EventSourceResponse(
+        _orchestrate(session_id, user_input), headers=headers
+    )
 
 
 async def _orchestrate(session_id: str, user_input: str) -> AsyncGenerator[dict, None]:
