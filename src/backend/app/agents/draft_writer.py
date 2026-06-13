@@ -324,11 +324,15 @@ class DraftWriter:
         doc_type: DocType | None,
         node: SkeletonNode,
         facts: list[Fact],
+        *,
+        force_llm: bool = False,
     ) -> DraftSection:
         doc_type_id = doc_type.id if doc_type else None
+        # force_llm이면 시드 무시. facts가 있는 시드 doc_type도 LLM 재작성.
+        if force_llm and doc_type is not None:
+            return await self._llm_section(doc_type, node, facts)
         if doc_type_id in _SEEDED_DOC_TYPE_IDS:
             return _section_for(doc_type_id, node.id, node.title, facts)
-        # 시드 없음 → LLM 호출
         if doc_type is None:
             return _generic_section(node.id, node.title)
         return await self._llm_section(doc_type, node, facts)
@@ -387,7 +391,9 @@ class DraftWriter:
         for node in input.skeleton:
             if target is not None and node.id not in target:
                 continue
-            s = await self._section_for_node(input.doc_type, node, input.facts)
+            s = await self._section_for_node(
+                input.doc_type, node, input.facts, force_llm=input.force_llm
+            )
             sections.append(s)
 
             for p in s.paragraphs:
@@ -415,7 +421,9 @@ class DraftWriter:
         for node in input.skeleton:
             if target is not None and node.id not in target:
                 continue
-            yield await self._section_for_node(input.doc_type, node, input.facts)
+            yield await self._section_for_node(
+                input.doc_type, node, input.facts, force_llm=input.force_llm
+            )
 
 
 # --- 파싱 헬퍼 -----------------------------------------------------------

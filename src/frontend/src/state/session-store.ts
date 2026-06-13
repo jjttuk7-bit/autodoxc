@@ -114,17 +114,39 @@ export const useSession = create<SessionStore>((set, get) => ({
   },
 
   submitAnswer: async (value, skip = false) => {
-    const { sessionId, pendingQuestion, pushSystem, setPendingQuestion } = get();
+    const {
+      sessionId,
+      pendingQuestion,
+      pushSystem,
+      setPendingQuestion,
+      upsertSection,
+    } = get();
     if (!sessionId || !pendingQuestion) return;
     const q = pendingQuestion.question;
+    setPendingQuestion(null);
+    if (!skip) {
+      pushSystem(`${q.field_ids[0] ?? "field"} → ${value}`);
+      pushSystem("영향 섹션 재작성 중…");
+    } else {
+      pushSystem("질문 건너뜀");
+    }
     try {
-      await answerQuestion(sessionId, q.field_ids, value, skip);
-      if (skip) {
-        pushSystem("질문 건너뜀");
-      } else {
-        pushSystem(`${q.field_ids[0] ?? "field"} → ${value}`);
+      const response = await answerQuestion(
+        sessionId,
+        q.field_ids,
+        value,
+        skip
+      );
+      if (response.updated_sections && response.updated_sections.length > 0) {
+        for (const section of response.updated_sections) {
+          upsertSection(section);
+        }
+        pushSystem(
+          `${response.updated_sections.length}개 섹션 자동 재작성 완료`
+        );
+      } else if (!skip) {
+        pushSystem("(영향 섹션 없음 — fact만 추가)");
       }
-      setPendingQuestion(null);
     } catch (e) {
       pushSystem(`답변 실패: ${String(e)}`);
     }

@@ -21,6 +21,8 @@ from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from app.agents import DraftWriter
+from app.llm import get_llm_client
 from app.orchestrator import run_main_sequence
 from app.shared.types import (
     DocType,
@@ -29,6 +31,7 @@ from app.shared.types import (
     ParagraphAnnotation,
     SkeletonNode,
 )
+from app.shared.types.agents.draft_writer import DraftWriterInput
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -101,6 +104,7 @@ class AnswerResponse(BaseModel):
     acknowledged: bool
     facts_added: int
     skipped: bool
+    updated_sections: list[DraftSection] = Field(default_factory=list)
 
 
 class SessionStateResponse(BaseModel):
@@ -219,6 +223,8 @@ async def answer_question(
     if body.skip:
         ctx.touch()
         return AnswerResponse(acknowledged=True, facts_added=0, skipped=True)
+
+    # 1) facts에 추가
     added = 0
     for fid in body.field_ids:
         ctx.facts.append(
@@ -230,8 +236,85 @@ async def answer_question(
             )
         )
         added += 1
+
+    # 2) 영향 섹션 식별 → LLM으로 부분 재작성
+    target_section_ids = _affected_sections(ctx, body.field_ids)
+    updated_sections: list[DraftSection] = []
+    if target_section_ids and ctx.doc_type and ctx.skeleton:
+        writer = DraftWriter(get_llm_client())
+        write_input = DraftWriterInput(
+            skeleton=ctx.skeleton,
+            facts=ctx.facts,
+            doc_type=ctx.doc_type,
+            target_sections=target_section_ids,
+            force_llm=True,  # 시드 doc_type도 LLM으로 재작성 (facts 반영)
+        )
+        try:
+            out = await writer.run(write_input)
+            for section in out.draft.sections:
+                ctx.sections[section.skeleton_id] = section
+                updated_sections.append(section)
+        except Exception:
+            pass  # 재작성 실패 시 facts만 추가하고 응답
+
     ctx.touch()
-    return AnswerResponse(acknowledged=True, facts_added=added, skipped=False)
+    return AnswerResponse(
+        acknowledged=True,
+        facts_added=added,
+        skipped=False,
+        updated_sections=updated_sections,
+    )
+
+
+# --- 부분 재작성 영향 섹션 매핑 ------------------------------------------
+
+
+_FIELD_TO_SECTION: dict[str, dict[str, list[str]]] = {
+    "foreign-worker-employment-plan": {
+        "recruitment_cost": ["sec_2"],
+        "industry": ["sec_1"],
+        "core_skill": ["sec_2"],
+    },
+    "administrative-appeal": {
+        "disposition_date": ["sec_2", "sec_3"],
+        "claimant_name": ["sec_1"],
+        "respondent_name": ["sec_1"],
+    },
+    "content-certified-mail": {
+        "recipient_name": ["sec_1", "sec_4"],
+        "sender_name": ["sec_1"],
+        "contract_date": ["sec_2"],
+    },
+}
+
+
+def _affected_sections(ctx: SessionContext, field_ids: list[str]) -> list[str]:
+    """답변된 field_id가 영향을 주는 섹션 id 목록.
+
+    매핑된 field가 있으면 그 섹션만, 없으면 영향 0 (재작성 안 함).
+    """
+    if not ctx.doc_type or not ctx.skeleton:
+        return []
+    doc_map = _FIELD_TO_SECTION.get(ctx.doc_type.id, {})
+    affected: set[str] = set()
+    for fid in field_ids:
+        affected.update(doc_map.get(fid, []))
+    if not affected:
+        # 매핑 없을 때: 최대 2개 섹션만 재작성 (비용·시간 균형)
+        # — 미지의 field는 가장 빈 슬롯 많은 섹션 우선
+        empty_counts: list[tuple[str, int]] = []
+        for node in ctx.skeleton:
+            section = ctx.sections.get(node.id)
+            if section is None:
+                continue
+            empties = sum(
+                1 for p in section.paragraphs if p.annotations.status == "empty"
+            )
+            if empties > 0:
+                empty_counts.append((node.id, empties))
+        empty_counts.sort(key=lambda x: -x[1])
+        return [sid for sid, _ in empty_counts[:2]]
+    return [sid for sid in affected if any(n.id == sid for n in ctx.skeleton)]
 
 
 # --- GET /api/sessions/{id}/state -----------------------------------------

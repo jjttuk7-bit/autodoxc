@@ -48,6 +48,7 @@ interface AnswerResponse {
   acknowledged: boolean;
   facts_added: number;
   skipped: boolean;
+  updated_sections: DraftSection[];
 }
 
 /** 빈/추정 문단을 사용자 입력으로 채움. 백엔드가 confirmed로 승격된 섹션 반환. */

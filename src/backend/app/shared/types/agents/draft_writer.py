@@ -28,6 +28,7 @@ class DraftWriterInput(BaseModel):
     style: StyleOptions | None = None
     target_sections: list[str] | None = None  # 부분 재작성 (04 §3)
     doc_type: DocType | None = None  # 본문 시드 분기용
+    force_llm: bool = False  # True면 시드 무시하고 LLM 호출 (부분 재작성용)
 
 
 class DraftWriterOutput(BaseModel):
