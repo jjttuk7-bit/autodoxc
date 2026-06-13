@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from ..doc import DocType
 from ..draft import Draft, EmptySlot
 from ..evidence import Evidence
 from ..facts import Fact
@@ -26,6 +27,7 @@ class DraftWriterInput(BaseModel):
     evidences: list[Evidence] = Field(default_factory=list)
     style: StyleOptions | None = None
     target_sections: list[str] | None = None  # 부분 재작성 (04 §3)
+    doc_type: DocType | None = None  # 본문 시드 분기용
 
 
 class DraftWriterOutput(BaseModel):

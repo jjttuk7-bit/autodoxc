@@ -85,19 +85,15 @@ async def run_main_sequence(
     write_input = DraftWriterInput(
         skeleton=comp_out.skeleton,
         facts=facts_out.facts,
+        doc_type=id_out.doc_type,
     )
     async for section in writer.stream(write_input):
         yield DraftSectionEvent(section=section)
         await asyncio.sleep(0.4)  # 점진 체감
 
-    # #3 GapAnalyzer 모킹 — 빈 슬롯 1개에 대한 인라인 질문
-    yield AskUserEvent(
-        question=Question(
-            field_ids=["recruitment_cost"],
-            prompt="채용 시도 비용은 얼마였나요? (개략값이면 충분합니다)",
-            why="‘고용 사유’ 섹션에서 국내 채용 노력의 정량 근거가 필요합니다.",
-        )
-    )
+    # #3 GapAnalyzer 모킹 — doc_type별 다른 질문
+    question = _mock_question_for(id_out.doc_type.id)
+    yield AskUserEvent(question=question)
     await asyncio.sleep(0.2)
 
     # #7 SelfReviewer 모킹 생략, 바로 editing_ready
@@ -105,3 +101,33 @@ async def run_main_sequence(
 
     # 토큰 회계 (현재는 정보용)
     _ = budget.total
+
+
+def _mock_question_for(doc_type_id: str) -> Question:
+    """B1-3 단계: doc_type별 가장 결정적인 빈 슬롯 1개에 대한 인라인 질문."""
+    table: dict[str, tuple[list[str], str, str]] = {
+        "foreign-worker-employment-plan": (
+            ["recruitment_cost"],
+            "채용 시도 비용은 얼마였나요? (개략값이면 충분합니다)",
+            "‘고용 사유’ 섹션에서 국내 채용 노력의 정량 근거가 필요합니다.",
+        ),
+        "administrative-appeal": (
+            ["disposition_date"],
+            "처분 일자는 언제인가요? (YYYY-MM-DD)",
+            "‘처분의 내용’ 섹션이 처분 일자에 의존합니다.",
+        ),
+        "content-certified-mail": (
+            ["recipient_name"],
+            "수신인(상대방)의 성명 또는 상호는 무엇인가요?",
+            "내용증명은 수신인 식별이 첫 단계입니다.",
+        ),
+    }
+    field_ids, prompt, why = table.get(
+        doc_type_id,
+        (
+            ["primary_subject"],
+            "이 문서의 핵심 주제 한 줄로 알려주실 수 있나요?",
+            "본문 작성을 위한 기본 정보가 필요합니다.",
+        ),
+    )
+    return Question(field_ids=field_ids, prompt=prompt, why=why)
