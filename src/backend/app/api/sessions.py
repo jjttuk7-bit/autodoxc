@@ -195,13 +195,19 @@ async def fill_slot(session_id: str, body: FillRequest) -> FillResponse:
             detail=f"paragraph_idx {body.paragraph_idx} out of range",
         )
     target = paragraphs[body.paragraph_idx]
+    new_text = body.text.strip()
+    # [[..]] 잔존 여부로 status 자동 결정:
+    # - 모두 채워졌으면 confirmed
+    # - 일부만 채워졌으면 inferred (사용자 작업 진행 중, needs_user_input 유지)
+    has_placeholder = "[[" in new_text and "]]" in new_text
+    new_status = "inferred" if has_placeholder else "confirmed"
     new_paragraph = target.model_copy(
         update={
-            "text": body.text.strip(),
+            "text": new_text,
             "annotations": target.annotations.model_copy(
                 update={
-                    "status": "confirmed",
-                    "needs_user_input": False,
+                    "status": new_status,
+                    "needs_user_input": has_placeholder,
                 }
             ),
         }

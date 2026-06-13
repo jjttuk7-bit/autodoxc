@@ -30,10 +30,12 @@ const EDITABLE_STATUSES: ReadonlySet<ParagraphStatus> = new Set<ParagraphStatus>
 
 const PLACEHOLDER_REGEX = /\[\[([^\]]+)\]\]/g;
 
-/** [[필드명]] 패턴을 시각 마크(작은 회색 박스)로 변환. 사용자가 텍스트 일부로
- *  오해하지 않게 — 행정문서에서 흔히 쓰는 괄호+밑줄 시안 채택. */
-function renderWithPlaceholders(text: string) {
-  const parts: Array<{ kind: "text" | "ph"; value: string }> = [];
+type Part =
+  | { kind: "text"; value: string }
+  | { kind: "ph"; label: string; rawMatch: string };
+
+function splitByPlaceholders(text: string): Part[] {
+  const parts: Part[] = [];
   let lastIndex = 0;
   PLACEHOLDER_REGEX.lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -41,91 +43,133 @@ function renderWithPlaceholders(text: string) {
     if (match.index > lastIndex) {
       parts.push({ kind: "text", value: text.slice(lastIndex, match.index) });
     }
-    parts.push({ kind: "ph", value: match[1] });
+    parts.push({ kind: "ph", label: match[1], rawMatch: match[0] });
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) {
     parts.push({ kind: "text", value: text.slice(lastIndex) });
   }
-  if (parts.length === 0) {
-    return text;
-  }
-  return parts.map((part, i) => {
-    if (part.kind === "ph") {
-      return (
-        <span
-          key={i}
-          className="inline-block px-2 py-0.5 mx-0.5 bg-amber-50 border border-amber-300 rounded text-amber-800 not-italic text-[0.85em] align-baseline font-medium"
-          title="자리표시자 — 클릭하여 편집 후 채워주세요"
-        >
-          {part.value}
-        </span>
-      );
-    }
-    return <span key={i}>{part.value}</span>;
-  });
+  return parts;
 }
 
-/** 편집 진입 시 textarea value에서 자리표시자 마크만 제거 (속의 라벨 유지).
- *  예: "청구인: [[청구인 성명]] (주소: [[청구인 주소]])"
- *      → "청구인: 청구인 성명 (주소: 청구인 주소)" 로 시작 — 사용자가 라벨을 자기 데이터로 교체. */
-function stripPlaceholderMarks(text: string): string {
-  return text.replace(PLACEHOLDER_REGEX, (_m, label) => label);
+interface SlotProps {
+  label: string;
+  rawMatch: string;
+  fullText: string;
+  onFill: (newText: string) => void;
 }
 
-export default function EditableParagraph({ paragraph, onSave }: Props) {
+function PlaceholderSlot({ label, rawMatch, fullText, onFill }: SlotProps) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(paragraph.text);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setValue(paragraph.text);
-  }, [paragraph.text]);
-
-  useEffect(() => {
-    if (editing && textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.select();
-    }
+    if (editing) inputRef.current?.focus();
   }, [editing]);
 
-  const status = paragraph.annotations.status;
-  const isEditable = EDITABLE_STATUSES.has(status);
-
-  const enterEdit = () => {
-    if (!isEditable) return;
-    // 편집 진입 시 자리표시자 마크 제거 — 사용자가 [[]] 보지 않고 채우게
-    setValue(stripPlaceholderMarks(paragraph.text));
-    setEditing(true);
+  const save = () => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setEditing(false);
+      setValue("");
+      return;
+    }
+    // 자리표시자 1개만 치환 — paragraph 전체 새 텍스트 생성
+    const newText = fullText.replace(rawMatch, trimmed);
+    onFill(newText);
+    setEditing(false);
+    setValue("");
   };
 
   if (editing) {
+    const widthCh = Math.max(label.length + 2, value.length + 2);
+    return (
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            setValue("");
+            setEditing(false);
+          }
+        }}
+        placeholder={label}
+        className="inline-block px-1.5 py-0.5 mx-0.5 border-2 border-blue-400 rounded text-sm bg-white align-baseline focus:outline-none not-italic"
+        style={{ width: `${widthCh}ch`, minWidth: "6rem" }}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+      className="inline-block px-2 py-0.5 mx-0.5 bg-amber-50 hover:bg-amber-100 border border-dashed border-amber-400 rounded text-amber-800 text-[0.85em] align-baseline font-medium cursor-pointer transition-colors not-italic"
+      title="클릭하여 채우기"
+    >
+      {label}
+    </button>
+  );
+}
+
+export default function EditableParagraph({ paragraph, onSave }: Props) {
+  const [fullEditing, setFullEditing] = useState(false);
+  const [fullValue, setFullValue] = useState(paragraph.text);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setFullValue(paragraph.text);
+  }, [paragraph.text]);
+
+  useEffect(() => {
+    if (fullEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.select();
+    }
+  }, [fullEditing]);
+
+  const status = paragraph.annotations.status;
+  const parts = splitByPlaceholders(paragraph.text);
+  const hasPlaceholders = parts.some((p) => p.kind === "ph");
+  const isEditable = EDITABLE_STATUSES.has(status);
+
+  // 전체 편집 모드 (자리표시자 없거나 더블클릭 진입)
+  if (fullEditing) {
     return (
       <div className="my-1 border-2 border-blue-400 rounded p-1 bg-blue-50">
         <Textarea
           ref={textareaRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
+          value={fullValue}
+          onChange={(e) => setFullValue(e.target.value)}
           className="border-0 bg-transparent focus-visible:ring-0 resize-none text-sm leading-relaxed"
           rows={2}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              onSave(value);
-              setEditing(false);
+              onSave(fullValue);
+              setFullEditing(false);
             }
             if (e.key === "Escape") {
               e.preventDefault();
-              setValue(paragraph.text);
-              setEditing(false);
+              setFullValue(paragraph.text);
+              setFullEditing(false);
             }
           }}
         />
         <div className="flex items-center justify-between mt-1 px-1">
           <div className="text-[10px] text-gray-500">
             <kbd className="px-1 py-0.5 bg-white rounded border">Enter</kbd> 저장 ·{" "}
-            <kbd className="px-1 py-0.5 bg-white rounded border">Esc</kbd> 취소 ·{" "}
-            <kbd className="px-1 py-0.5 bg-white rounded border">Shift+Enter</kbd> 줄바꿈
+            <kbd className="px-1 py-0.5 bg-white rounded border">Esc</kbd> 취소
           </div>
           <div className="flex gap-1">
             <Button
@@ -133,8 +177,8 @@ export default function EditableParagraph({ paragraph, onSave }: Props) {
               variant="ghost"
               className="h-6 px-2"
               onClick={() => {
-                setValue(paragraph.text);
-                setEditing(false);
+                setFullValue(paragraph.text);
+                setFullEditing(false);
               }}
             >
               <X className="h-3 w-3" />
@@ -143,8 +187,8 @@ export default function EditableParagraph({ paragraph, onSave }: Props) {
               size="sm"
               className="h-6 px-2"
               onClick={() => {
-                onSave(value);
-                setEditing(false);
+                onSave(fullValue);
+                setFullEditing(false);
               }}
             >
               <Check className="h-3 w-3" />
@@ -156,6 +200,36 @@ export default function EditableParagraph({ paragraph, onSave }: Props) {
     );
   }
 
+  // 자리표시자가 있는 paragraph: 인라인 input
+  if (hasPlaceholders && isEditable) {
+    return (
+      <p
+        className={`leading-relaxed py-1 ${statusClass(status)}`}
+        onDoubleClick={() => {
+          setFullValue(paragraph.text);
+          setFullEditing(true);
+        }}
+        title="자리표시자 클릭 또는 더블클릭으로 전체 편집"
+      >
+        {parts.map((part, i) => {
+          if (part.kind === "ph") {
+            return (
+              <PlaceholderSlot
+                key={i}
+                label={part.label}
+                rawMatch={part.rawMatch}
+                fullText={paragraph.text}
+                onFill={onSave}
+              />
+            );
+          }
+          return <span key={i}>{part.value}</span>;
+        })}
+      </p>
+    );
+  }
+
+  // 자리표시자 없는 paragraph: 전체 클릭 편집
   return (
     <p
       className={`leading-relaxed py-1 ${statusClass(status)} ${
@@ -163,10 +237,15 @@ export default function EditableParagraph({ paragraph, onSave }: Props) {
           ? "cursor-pointer hover:ring-1 hover:ring-blue-300 hover:ring-offset-1 rounded transition-shadow"
           : ""
       }`}
-      onClick={enterEdit}
+      onClick={() => {
+        if (isEditable) {
+          setFullValue(paragraph.text);
+          setFullEditing(true);
+        }
+      }}
       title={isEditable ? "클릭하여 편집" : undefined}
     >
-      {renderWithPlaceholders(paragraph.text)}
+      {paragraph.text}
     </p>
   );
 }
