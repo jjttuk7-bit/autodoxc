@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import io
+import re
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -408,11 +409,11 @@ def _build_docx(ctx: SessionContext) -> io.BytesIO:
             continue
         # 섹션 제목
         doc.add_heading(section.title, level=1)
-        # 문단들
+        # 문단들 — 자리표시자 [[필드명]]은 (필드명)으로 변환
         for p in section.paragraphs:
             para = doc.add_paragraph()
-            run = para.add_run(p.text)
-            # status에 따라 시각 단서 (그레이는 회색, empty는 이탤릭)
+            converted = _convert_placeholders_for_docx(p.text)
+            run = para.add_run(converted)
             if p.annotations.status == "inferred":
                 run.italic = True
             elif p.annotations.status == "defaulted":
@@ -425,6 +426,17 @@ def _build_docx(ctx: SessionContext) -> io.BytesIO:
     doc.save(bio)
     bio.seek(0)
     return bio
+
+
+_PLACEHOLDER_REGEX = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def _convert_placeholders_for_docx(text: str) -> str:
+    """[[필드명]] → ( 필드명          ) 행정문서 표준 빈 칸 표기.
+
+    출력본을 인쇄해 수기로 채울 수 있게 괄호 + 밑줄 형태.
+    """
+    return _PLACEHOLDER_REGEX.sub(lambda m: f"(  {m.group(1)}          )", text)
 
 
 # --- 테스트·디버깅 유틸 ---

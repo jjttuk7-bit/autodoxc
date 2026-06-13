@@ -28,6 +28,51 @@ const EDITABLE_STATUSES: ReadonlySet<ParagraphStatus> = new Set<ParagraphStatus>
   ["empty", "inferred", "defaulted"]
 );
 
+const PLACEHOLDER_REGEX = /\[\[([^\]]+)\]\]/g;
+
+/** [[필드명]] 패턴을 시각 마크(작은 회색 박스)로 변환. 사용자가 텍스트 일부로
+ *  오해하지 않게 — 행정문서에서 흔히 쓰는 괄호+밑줄 시안 채택. */
+function renderWithPlaceholders(text: string) {
+  const parts: Array<{ kind: "text" | "ph"; value: string }> = [];
+  let lastIndex = 0;
+  PLACEHOLDER_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PLACEHOLDER_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ kind: "text", value: text.slice(lastIndex, match.index) });
+    }
+    parts.push({ kind: "ph", value: match[1] });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ kind: "text", value: text.slice(lastIndex) });
+  }
+  if (parts.length === 0) {
+    return text;
+  }
+  return parts.map((part, i) => {
+    if (part.kind === "ph") {
+      return (
+        <span
+          key={i}
+          className="inline-block px-2 py-0.5 mx-0.5 bg-amber-50 border border-amber-300 rounded text-amber-800 not-italic text-[0.85em] align-baseline font-medium"
+          title="자리표시자 — 클릭하여 편집 후 채워주세요"
+        >
+          {part.value}
+        </span>
+      );
+    }
+    return <span key={i}>{part.value}</span>;
+  });
+}
+
+/** 편집 진입 시 textarea value에서 자리표시자 마크만 제거 (속의 라벨 유지).
+ *  예: "청구인: [[청구인 성명]] (주소: [[청구인 주소]])"
+ *      → "청구인: 청구인 성명 (주소: 청구인 주소)" 로 시작 — 사용자가 라벨을 자기 데이터로 교체. */
+function stripPlaceholderMarks(text: string): string {
+  return text.replace(PLACEHOLDER_REGEX, (_m, label) => label);
+}
+
 export default function EditableParagraph({ paragraph, onSave }: Props) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(paragraph.text);
@@ -46,6 +91,13 @@ export default function EditableParagraph({ paragraph, onSave }: Props) {
 
   const status = paragraph.annotations.status;
   const isEditable = EDITABLE_STATUSES.has(status);
+
+  const enterEdit = () => {
+    if (!isEditable) return;
+    // 편집 진입 시 자리표시자 마크 제거 — 사용자가 [[]] 보지 않고 채우게
+    setValue(stripPlaceholderMarks(paragraph.text));
+    setEditing(true);
+  };
 
   if (editing) {
     return (
@@ -111,12 +163,10 @@ export default function EditableParagraph({ paragraph, onSave }: Props) {
           ? "cursor-pointer hover:ring-1 hover:ring-blue-300 hover:ring-offset-1 rounded transition-shadow"
           : ""
       }`}
-      onClick={() => {
-        if (isEditable) setEditing(true);
-      }}
+      onClick={enterEdit}
       title={isEditable ? "클릭하여 편집" : undefined}
     >
-      {paragraph.text}
+      {renderWithPlaceholders(paragraph.text)}
     </p>
   );
 }
