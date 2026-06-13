@@ -27,6 +27,12 @@ interface SessionStore {
   pushSystem: (m: string) => void;
   startSession: (userInput: string) => Promise<void>;
   reset: () => void;
+  /** 인라인 편집 — 사용자가 빈 슬롯/추정 문단을 직접 채움. status=confirmed로 승격. */
+  updateParagraph: (
+    sectionId: string,
+    paragraphIdx: number,
+    newText: string
+  ) => void;
 }
 
 const initial = () => ({
@@ -55,6 +61,35 @@ export const useSession = create<SessionStore>((set, get) => ({
   pushSystem: (m) =>
     set((state) => ({ systemMessages: [...state.systemMessages, m] })),
   reset: () => set(initial()),
+
+  updateParagraph: (sectionId, paragraphIdx, newText) =>
+    set((state) => {
+      const section = state.sections.get(sectionId);
+      if (!section) return state;
+      const paras = [...(section.paragraphs ?? [])];
+      const target = paras[paragraphIdx];
+      if (!target) return state;
+      const trimmed = newText.trim();
+      if (!trimmed) return state;
+      paras[paragraphIdx] = {
+        ...target,
+        text: trimmed,
+        annotations: {
+          ...target.annotations,
+          status: "confirmed",
+          needs_user_input: false,
+        },
+      };
+      const next = new Map(state.sections);
+      next.set(sectionId, { ...section, paragraphs: paras });
+      return {
+        sections: next,
+        systemMessages: [
+          ...state.systemMessages,
+          `[${section.title}] 문단 ${paragraphIdx + 1} 수정`,
+        ],
+      };
+    }),
 
   startSession: async (userInput) => {
     const { setSkeleton, upsertSection, setPendingQuestion, pushSystem } = get();

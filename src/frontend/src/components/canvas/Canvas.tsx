@@ -1,34 +1,11 @@
 import { useSession } from "../../state/session-store";
 import type { DraftParagraph, ParagraphStatus } from "../../api/types";
 import StartScreen from "../start/StartScreen";
-
-function statusClass(s: ParagraphStatus): string {
-  switch (s) {
-    case "confirmed":
-      return "text-gray-900";
-    case "inferred":
-      return "text-gray-900 bg-yellow-100 border-b border-dotted border-yellow-500";
-    case "defaulted":
-      return "text-gray-500";
-    case "evidence_backed":
-      return "text-gray-900 border-r-2 border-blue-500 pr-2";
-    case "empty":
-      return "text-gray-400 italic bg-gray-50 border border-dashed border-gray-300 rounded px-1";
-  }
-}
-
-function Paragraph({ p }: { p: DraftParagraph }) {
-  return (
-    <p className={`leading-relaxed py-1 ${statusClass(p.annotations.status)}`}>
-      {p.text}
-    </p>
-  );
-}
+import EditableParagraph from "./EditableParagraph";
 
 export default function Canvas() {
-  const { uiState, skeleton, sections } = useSession();
+  const { uiState, skeleton, sections, updateParagraph } = useSession();
 
-  // 시작 전 — 입력 화면
   if (uiState === "idle") {
     return (
       <main className="flex-1 overflow-y-auto">
@@ -54,10 +31,15 @@ export default function Canvas() {
   return (
     <main className="flex-1 overflow-y-auto bg-gray-50 p-6">
       <div className="mb-4 max-w-3xl mx-auto">
-        <div className="text-xs text-gray-500 mb-1 flex gap-4">
+        <div className="text-xs text-gray-500 mb-1 flex gap-4 items-center">
           <span>확정 {pct(confirmed)}%</span>
           <span>추정 {pct(inferred)}%</span>
           <span>빈칸 {pct(empty)}%</span>
+          {empty > 0 && (
+            <span className="ml-auto text-blue-600">
+              점선 박스 클릭으로 편집
+            </span>
+          )}
         </div>
         <div className="h-1.5 bg-gray-200 rounded overflow-hidden flex">
           <div className="bg-gray-800" style={{ width: `${pct(confirmed)}%` }} />
@@ -84,7 +66,11 @@ export default function Canvas() {
               {paras.length > 0 ? (
                 <div>
                   {paras.map((p, i) => (
-                    <Paragraph key={i} p={p} />
+                    <EditableParagraph
+                      key={`${s.id}:${i}`}
+                      paragraph={p}
+                      onSave={(newText) => updateParagraph(s.id, i, newText)}
+                    />
                   ))}
                 </div>
               ) : (
