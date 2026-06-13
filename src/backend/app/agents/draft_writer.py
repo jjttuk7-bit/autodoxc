@@ -37,6 +37,88 @@ _VALID_STATUSES: set[ParagraphStatus] = {
 }
 
 
+# 시드 doc_type의 자리표시자 ← field_id 매핑.
+# 답변 들어오면 시드 본문의 [[..]] 부분이 답변값으로 치환되면서 confirmed로 승격.
+_FIELD_PLACEHOLDERS: dict[str, dict[str, list[str]]] = {
+    "foreign-worker-employment-plan": {
+        "industry": ["[[업종]]"],
+        "company_name": ["[[회사명]]"],
+        "core_skill": ["[[보유 기술]]"],
+        "recruitment_cost": ["[[채용 시도 비용]]"],
+        "recruitment_attempts": ["[[채용 시도 횟수]]"],
+        "training_count": ["[[교육 대상 인원]]"],
+        "revenue_target": ["[[연간 매출 목표]]"],
+    },
+    "administrative-appeal": {
+        "claimant_name": ["[[청구인 성명]]"],
+        "claimant_address": ["[[청구인 주소]]"],
+        "respondent_name": ["[[처분청 명칭]]"],
+        "disposition_date": ["[[처분 일자]]"],
+        "disposition_content": ["[[처분 내용]]", "[[처분 내용 — 영업정지 N일 등]]"],
+        "applicable_law": ["[[근거 법령]]", "[[근거 법령 — 식품위생법 등]]"],
+        "notice_date": ["[[처분 통지 받은 날]]"],
+        "illegality_reason": ["[[구체적 위법 사유]]", "[[구체적 위법 사유 — 사실오인·비례원칙 위반 등]]"],
+        "evidence_list": ["[[추가 증거 목록]]", "[[추가 증거 목록 — 사실증명·진술서·내용증명 등]]"],
+    },
+    "content-certified-mail": {
+        "recipient_name": ["[[수신인 성명/상호]]"],
+        "recipient_address": ["[[수신인 주소]]"],
+        "sender_name": ["[[발신인 성명/상호]]"],
+        "sender_address": ["[[발신인 주소]]"],
+        "contract_date": ["[[계약/거래 시작일]]"],
+        "contract_content": ["[[계약 내용 — 임대차·매매 등]]"],
+        "dispute_facts": ["[[분쟁 사실 — 임대료 미납·납품 지연 등]]"],
+        "demand": ["[[요구 사항 — 미납 임대료 N원 지급, 채무 이행 등]]"],
+        "deadline": ["[[이행 기한 — 7일·14일 등]]"],
+    },
+}
+
+
+def interpolate_section(
+    section: DraftSection, doc_type_id: str, facts: list[Fact]
+) -> DraftSection:
+    """시드 본문의 자리표시자를 facts 값으로 치환.
+
+    치환된 문단은 status='confirmed'로 승격. LLM 호출 없이 즉시.
+    """
+    placeholder_map = _FIELD_PLACEHOLDERS.get(doc_type_id, {})
+    if not placeholder_map:
+        return section
+    facts_lookup = {f.field_id: f for f in facts}
+    if not facts_lookup:
+        return section
+
+    new_paragraphs: list[DraftParagraph] = []
+    for p in section.paragraphs:
+        new_text = p.text
+        any_replaced = False
+        for field_id, placeholders in placeholder_map.items():
+            fact = facts_lookup.get(field_id)
+            if fact is None:
+                continue
+            value_str = str(fact.value).strip()
+            if not value_str:
+                continue
+            for placeholder in placeholders:
+                if placeholder in new_text:
+                    new_text = new_text.replace(placeholder, value_str)
+                    any_replaced = True
+        if any_replaced:
+            new_paragraphs.append(
+                p.model_copy(
+                    update={
+                        "text": new_text,
+                        "annotations": p.annotations.model_copy(
+                            update={"status": "confirmed", "needs_user_input": False}
+                        ),
+                    }
+                )
+            )
+        else:
+            new_paragraphs.append(p)
+    return section.model_copy(update={"paragraphs": new_paragraphs})
+
+
 def _para(text: str, status: ParagraphStatus = "confirmed", **kw) -> DraftParagraph:
     return DraftParagraph(text=text, annotations=ParagraphAnnotation(status=status, **kw))
 
@@ -72,9 +154,9 @@ def _foreign_worker_section(sid: str, title: str, facts: list[Fact]) -> DraftSec
             title=title,
             paragraphs=[
                 _para(
-                    "최근 1년간 6회의 채용 시도가 있었으며,",
-                    status="inferred",
-                    fact_refs=["fact_attempts"],
+                    "최근 1년간 [[채용 시도 비용]]의 비용을 들여 [[채용 시도 횟수]]회의 채용 시도를 하였으나,",
+                    status="empty",
+                    needs_user_input=True,
                 ),
                 _para(
                     "「외국인근로자의 고용 등에 관한 법률」 제3조에 따라 국내 인력 우선 채용 원칙을 준수하였으나,",
@@ -327,14 +409,24 @@ class DraftWriter:
         *,
         force_llm: bool = False,
     ) -> DraftSection:
+        """섹션 본문 결정 로직.
+
+        - 시드 doc_type: 시드 본문 + facts로 자리표시자 치환 (LLM 호출 X)
+          → force_llm은 무시됨 (시드가 도메인 신뢰성 보장)
+        - 시드 없는 doc_type: LLM 호출 (force_llm 무관, 항상 LLM)
+        - doc_type 자체가 None: generic stub
+        """
         doc_type_id = doc_type.id if doc_type else None
-        # force_llm이면 시드 무시. facts가 있는 시드 doc_type도 LLM 재작성.
-        if force_llm and doc_type is not None:
-            return await self._llm_section(doc_type, node, facts)
         if doc_type_id in _SEEDED_DOC_TYPE_IDS:
-            return _section_for(doc_type_id, node.id, node.title, facts)
+            section = _section_for(doc_type_id, node.id, node.title, facts)
+            if facts:
+                # 답변된 fact가 있으면 자리표시자 치환
+                section = interpolate_section(section, doc_type_id, facts)
+            return section
         if doc_type is None:
             return _generic_section(node.id, node.title)
+        # 시드 없는 doc_type → LLM 호출 (force_llm 무관)
+        _ = force_llm  # 인터페이스 호환만 유지
         return await self._llm_section(doc_type, node, facts)
 
     async def _llm_section(
