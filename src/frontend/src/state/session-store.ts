@@ -6,7 +6,12 @@ import type {
   SkeletonNode,
   StreamEvent,
 } from "../api/types";
-import { createSession, startSessionStream } from "../api/client";
+import {
+  answerQuestion,
+  createSession,
+  fillSlot,
+  startSessionStream,
+} from "../api/client";
 
 type UIState = "idle" | "composing" | "drafting" | "editing" | "saved";
 
@@ -32,7 +37,9 @@ interface SessionStore {
     sectionId: string,
     paragraphIdx: number,
     newText: string
-  ) => void;
+  ) => Promise<void>;
+  /** 인라인 질문 답변 — 백엔드 facts에 추가 + 질문 닫기. */
+  submitAnswer: (value: string, skip?: boolean) => Promise<void>;
 }
 
 const initial = () => ({
@@ -62,34 +69,63 @@ export const useSession = create<SessionStore>((set, get) => ({
     set((state) => ({ systemMessages: [...state.systemMessages, m] })),
   reset: () => set(initial()),
 
-  updateParagraph: (sectionId, paragraphIdx, newText) =>
-    set((state) => {
-      const section = state.sections.get(sectionId);
-      if (!section) return state;
-      const paras = [...(section.paragraphs ?? [])];
-      const target = paras[paragraphIdx];
-      if (!target) return state;
-      const trimmed = newText.trim();
-      if (!trimmed) return state;
-      paras[paragraphIdx] = {
-        ...target,
-        text: trimmed,
-        annotations: {
-          ...target.annotations,
-          status: "confirmed",
-          needs_user_input: false,
-        },
-      };
-      const next = new Map(state.sections);
-      next.set(sectionId, { ...section, paragraphs: paras });
-      return {
-        sections: next,
-        systemMessages: [
-          ...state.systemMessages,
-          `[${section.title}] 문단 ${paragraphIdx + 1} 수정`,
-        ],
-      };
-    }),
+  updateParagraph: async (sectionId, paragraphIdx, newText) => {
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    const { sessionId, upsertSection, pushSystem } = get();
+    if (!sessionId) {
+      // 세션 없으면 클라이언트만 갱신
+      set((state) => {
+        const section = state.sections.get(sectionId);
+        if (!section) return state;
+        const paras = [...(section.paragraphs ?? [])];
+        const target = paras[paragraphIdx];
+        if (!target) return state;
+        paras[paragraphIdx] = {
+          ...target,
+          text: trimmed,
+          annotations: {
+            ...target.annotations,
+            status: "confirmed",
+            needs_user_input: false,
+          },
+        };
+        const next = new Map(state.sections);
+        next.set(sectionId, { ...section, paragraphs: paras });
+        return { sections: next };
+      });
+      return;
+    }
+    try {
+      const updated = await fillSlot(
+        sessionId,
+        sectionId,
+        paragraphIdx,
+        trimmed
+      );
+      upsertSection(updated);
+      pushSystem(`수정 저장: ${updated.title} 문단 ${paragraphIdx + 1}`);
+    } catch (e) {
+      pushSystem(`수정 실패: ${String(e)}`);
+    }
+  },
+
+  submitAnswer: async (value, skip = false) => {
+    const { sessionId, pendingQuestion, pushSystem, setPendingQuestion } = get();
+    if (!sessionId || !pendingQuestion) return;
+    const q = pendingQuestion.question;
+    try {
+      await answerQuestion(sessionId, q.field_ids, value, skip);
+      if (skip) {
+        pushSystem("질문 건너뜀");
+      } else {
+        pushSystem(`${q.field_ids[0] ?? "field"} → ${value}`);
+      }
+      setPendingQuestion(null);
+    } catch (e) {
+      pushSystem(`답변 실패: ${String(e)}`);
+    }
+  },
 
   startSession: async (userInput) => {
     const { setSkeleton, upsertSection, setPendingQuestion, pushSystem } = get();

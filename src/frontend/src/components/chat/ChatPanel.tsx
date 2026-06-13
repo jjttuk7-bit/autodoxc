@@ -10,8 +10,7 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 
 export default function ChatPanel() {
-  const { systemMessages, pendingQuestion, setPendingQuestion, pushSystem } =
-    useSession();
+  const { systemMessages, pendingQuestion, submitAnswer } = useSession();
 
   const q = pendingQuestion?.question;
 
@@ -51,21 +50,18 @@ export default function ChatPanel() {
                 placeholder="답변 입력…"
                 className="h-7 text-xs"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && e.currentTarget.value.trim()) {
-                    pushSystem(
-                      `${q.field_ids[0] ?? "field"} → ${e.currentTarget.value}`
-                    );
-                    setPendingQuestion(null);
+                  const value = e.currentTarget.value.trim();
+                  if (e.key === "Enter" && value) {
+                    e.preventDefault();
+                    void submitAnswer(value, false);
+                    e.currentTarget.value = "";
                   }
                 }}
               />
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  pushSystem("질문 건너뜀");
-                  setPendingQuestion(null);
-                }}
+                onClick={() => void submitAnswer("", true)}
               >
                 <SkipForward className="h-3 w-3" />
                 건너뜀

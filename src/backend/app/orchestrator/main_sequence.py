@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 
 from app.agents import (
@@ -18,11 +18,15 @@ from app.agents import (
 from app.llm import LLMClient, TokenBudget, get_llm_client
 from app.shared.types import (
     AskUserEvent,
+    DocType,
+    DraftSection,
     DraftSectionEvent,
     EditingReadyEvent,
+    Fact,
     FactsExtractedEvent,
     Message,
     Question,
+    SkeletonNode,
     SkeletonReadyEvent,
     StreamEvent,
 )
@@ -37,8 +41,11 @@ async def run_main_sequence(
     session_id: str,
     user_input: str,
     llm: LLMClient | None = None,
+    on_skeleton: Callable[[DocType, list[SkeletonNode]], None] | None = None,
+    on_facts: Callable[[list[Fact]], None] | None = None,
+    on_section: Callable[[DraftSection], None] | None = None,
 ) -> AsyncIterator[StreamEvent]:
-    """B0-2 콜드스타트: 4개 에이전트 + 모킹된 ask_user + editing_ready."""
+    """메인 시퀀스. on_* 콜백으로 호출자(SessionContext)가 결과를 누적할 수 있음."""
 
     llm = llm or get_llm_client()
     budget = TokenBudget(session_id=session_id, limit=200_000)
@@ -64,6 +71,8 @@ async def run_main_sequence(
     comp_out = await composer.run(
         SkeletonComposerInput(doc_type=id_out.doc_type)
     )
+    if on_skeleton:
+        on_skeleton(id_out.doc_type, comp_out.skeleton)
     yield SkeletonReadyEvent(doc_type=id_out.doc_type, skeleton=comp_out.skeleton)
     await asyncio.sleep(0.2)  # UI 흐름 체감용 — B1에서 제거
 
@@ -74,6 +83,8 @@ async def run_main_sequence(
             user_input_history=history, skeleton=comp_out.skeleton
         )
     )
+    if on_facts:
+        on_facts(facts_out.facts)
     yield FactsExtractedEvent(
         fact_count=len(facts_out.facts),
         unresolved_count=len(facts_out.unresolved_fields),
@@ -88,6 +99,8 @@ async def run_main_sequence(
         doc_type=id_out.doc_type,
     )
     async for section in writer.stream(write_input):
+        if on_section:
+            on_section(section)
         yield DraftSectionEvent(section=section)
         await asyncio.sleep(0.4)  # 점진 체감
 
