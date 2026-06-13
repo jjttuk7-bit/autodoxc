@@ -10,6 +10,7 @@ import {
   answerQuestion,
   createSession,
   fillSlot,
+  getSessionState,
   startSessionStream,
 } from "../api/client";
 
@@ -31,6 +32,8 @@ interface SessionStore {
   setPendingQuestion: (q: AskUserEvent | null) => void;
   pushSystem: (m: string) => void;
   startSession: (userInput: string) => Promise<void>;
+  /** URL ?s=xxx 등으로 알게 된 sessionId의 세션 상태 복구. */
+  restoreSession: (sessionId: string) => Promise<boolean>;
   reset: () => void;
   /** 인라인 편집 — 사용자가 빈 슬롯/추정 문단을 직접 채움. status=confirmed로 승격. */
   updateParagraph: (
@@ -176,9 +179,85 @@ export const useSession = create<SessionStore>((set, get) => ({
 
     try {
       await startSessionStream(sessionId, handler);
+      // 세션 ID를 URL에 저장 — 새로고침 시 복구 가능
+      _writeSessionIdToUrl(sessionId);
     } catch (e) {
       pushSystem(`스트림 오류: ${String(e)}`);
       set({ error: String(e) });
     }
   },
+
+  restoreSession: async (sessionId) => {
+    const { pushSystem } = get();
+    set({
+      ...initial(),
+      uiState: "composing",
+      sessionId,
+      systemMessages: [`세션 복구 중: ${sessionId}`],
+    });
+    try {
+      const state = await getSessionState(sessionId);
+      const sectionsMap = new Map<string, DraftSection>();
+      for (const s of state.sections) {
+        sectionsMap.set(s.skeleton_id, s);
+      }
+      set({
+        sessionId: state.session_id,
+        docType: state.doc_type,
+        skeleton: state.skeleton,
+        sections: sectionsMap,
+        uiState: state.is_complete ? "editing" : "drafting",
+      });
+      pushSystem(
+        state.doc_type
+          ? `복구 완료: ${state.doc_type.ko_name} (${state.sections.length}섹션)`
+          : "복구 완료 — 비어있는 세션",
+      );
+      _writeSessionIdToUrl(sessionId);
+      return true;
+    } catch (e) {
+      set({
+        uiState: "idle",
+        sessionId: null,
+        error: `세션 복구 실패: ${String(e)}`,
+      });
+      _clearSessionIdFromUrl();
+      return false;
+    }
+  },
 }));
+
+
+// --- URL 동기화 헬퍼 -----------------------------------------------------
+
+const URL_PARAM = "s";
+
+function _writeSessionIdToUrl(sessionId: string) {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get(URL_PARAM) === sessionId) return;
+    url.searchParams.set(URL_PARAM, sessionId);
+    window.history.replaceState({}, "", url.toString());
+  } catch {
+    // ignored
+  }
+}
+
+function _clearSessionIdFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(URL_PARAM)) return;
+    url.searchParams.delete(URL_PARAM);
+    window.history.replaceState({}, "", url.toString());
+  } catch {
+    // ignored
+  }
+}
+
+export function getSessionIdFromUrl(): string | null {
+  try {
+    return new URL(window.location.href).searchParams.get(URL_PARAM);
+  } catch {
+    return null;
+  }
+}

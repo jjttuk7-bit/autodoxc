@@ -11,12 +11,13 @@
 """
 from __future__ import annotations
 
+import io
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -100,6 +101,17 @@ class AnswerResponse(BaseModel):
     acknowledged: bool
     facts_added: int
     skipped: bool
+
+
+class SessionStateResponse(BaseModel):
+    session_id: str
+    user_input: str
+    doc_type: DocType | None
+    skeleton: list[SkeletonNode]
+    facts: list[Fact]
+    sections: list[DraftSection]
+    is_complete: bool
+    updated_at: datetime
 
 
 # --- POST /api/sessions ---------------------------------------------------
@@ -220,6 +232,116 @@ async def answer_question(
         added += 1
     ctx.touch()
     return AnswerResponse(acknowledged=True, facts_added=added, skipped=False)
+
+
+# --- GET /api/sessions/{id}/state -----------------------------------------
+
+
+@router.get("/{session_id}/state", response_model=SessionStateResponse)
+async def get_session_state(session_id: str) -> SessionStateResponse:
+    """페이지 새로고침 시 복구용. SessionContext 전체 스냅샷."""
+    ctx = _require_session(session_id)
+    # 섹션을 skeleton 순서대로 정렬해서 반환
+    ordered_sections: list[DraftSection] = []
+    for node in ctx.skeleton:
+        s = ctx.sections.get(node.id)
+        if s is not None:
+            ordered_sections.append(s)
+    return SessionStateResponse(
+        session_id=ctx.session_id,
+        user_input=ctx.user_input,
+        doc_type=ctx.doc_type,
+        skeleton=ctx.skeleton,
+        facts=ctx.facts,
+        sections=ordered_sections,
+        is_complete=len(ordered_sections) == len(ctx.skeleton)
+        and len(ctx.skeleton) > 0,
+        updated_at=ctx.updated_at,
+    )
+
+
+# --- GET /api/sessions/{id}/export?format=docx ----------------------------
+
+
+@router.get("/{session_id}/export")
+async def export_session(session_id: str, format: str = "docx") -> Response:
+    """완성된 문서를 .docx로 다운로드."""
+    ctx = _require_session(session_id)
+    if format != "docx":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unsupported format: {format}",
+        )
+    if not ctx.skeleton or not ctx.sections:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="document not ready for export — skeleton or sections missing",
+        )
+    bio = _build_docx(ctx)
+    title = (ctx.doc_type.ko_name if ctx.doc_type else "행정문서").replace(
+        " ", "_"
+    )
+    filename = f"autodoxc-{title}-{session_id}.docx"
+    return Response(
+        content=bio.getvalue(),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        headers={
+            # 한글 파일명 RFC 5987
+            "Content-Disposition": (
+                f"attachment; filename=\"autodoxc-{session_id}.docx\"; "
+                f"filename*=UTF-8''{filename}"
+            )
+        },
+    )
+
+
+def _build_docx(ctx: SessionContext) -> io.BytesIO:
+    """python-docx로 SessionContext → 워드 문서 생성."""
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document()
+
+    # 제목
+    title_text = ctx.doc_type.ko_name if ctx.doc_type else "행정문서"
+    title = doc.add_heading(title_text, level=0)
+    for run in title.runs:
+        run.font.size = Pt(20)
+
+    # 사용자 입력 메타 (작은 글씨)
+    meta = doc.add_paragraph()
+    meta_run = meta.add_run(
+        f"생성: {ctx.updated_at.strftime('%Y-%m-%d %H:%M')} · 세션 {ctx.session_id}"
+    )
+    meta_run.italic = True
+    meta_run.font.size = Pt(9)
+
+    # 본문 — skeleton 순서대로
+    for node in ctx.skeleton:
+        section = ctx.sections.get(node.id)
+        if section is None:
+            continue
+        # 섹션 제목
+        doc.add_heading(section.title, level=1)
+        # 문단들
+        for p in section.paragraphs:
+            para = doc.add_paragraph()
+            run = para.add_run(p.text)
+            # status에 따라 시각 단서 (그레이는 회색, empty는 이탤릭)
+            if p.annotations.status == "inferred":
+                run.italic = True
+            elif p.annotations.status == "defaulted":
+                run.font.size = Pt(10)
+            elif p.annotations.status == "empty":
+                run.italic = True
+                run.bold = False
+
+    bio = io.BytesIO()
+    doc.save(bio)
+    bio.seek(0)
+    return bio
 
 
 # --- 테스트·디버깅 유틸 ---

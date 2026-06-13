@@ -1,9 +1,15 @@
-// 세션 생성·스트리밍·편집 API 묶음
+// 세션 생성·스트리밍·편집·복구·내보내기 API 묶음
 
 import type { components } from "./generated";
-import { apiUrl } from "./base";
+import { apiUrl, API_BASE } from "./base";
 import { connectStream } from "../streaming/sse-client";
-import type { DraftSection, StreamEvent } from "./types";
+import type {
+  DocType,
+  DraftSection,
+  Fact,
+  SkeletonNode,
+  StreamEvent,
+} from "./types";
 
 type CreateSessionRequest =
   components["schemas"]["CreateSessionRequest"];
@@ -87,4 +93,36 @@ export async function answerQuestion(
     throw new Error(`answerQuestion failed: ${res.status}`);
   }
   return (await res.json()) as AnswerResponse;
+}
+
+// --- 복구 + 내보내기 -----------------------------------------------------
+
+export interface SessionStateResponse {
+  session_id: string;
+  user_input: string;
+  doc_type: DocType | null;
+  skeleton: SkeletonNode[];
+  facts: Fact[];
+  sections: DraftSection[];
+  is_complete: boolean;
+  updated_at: string;
+}
+
+/** 세션 복구 — URL ?s=xxx 등으로 sessionId가 알려진 상황에서 호출. */
+export async function getSessionState(
+  sessionId: string
+): Promise<SessionStateResponse> {
+  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/state`));
+  if (res.status === 404) {
+    throw new Error("session not found");
+  }
+  if (!res.ok) {
+    throw new Error(`getSessionState failed: ${res.status}`);
+  }
+  return (await res.json()) as SessionStateResponse;
+}
+
+/** 완성된 문서를 .docx로 다운로드. 새 탭에서 직접 호출. */
+export function exportDocxUrl(sessionId: string): string {
+  return `${API_BASE}/api/sessions/${sessionId}/export?format=docx`;
 }
