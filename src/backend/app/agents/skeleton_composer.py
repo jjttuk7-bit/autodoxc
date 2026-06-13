@@ -1,11 +1,15 @@
 """#1b SkeletonComposer — 문서 종류에서 골격 구성.
 
-콜드스타트(DA1·DA2·DA3 비어있음): LLM 일반 지식 또는 dummy 시드만 사용.
+콜드스타트(DA1·DA2·DA3 비어있음): 시드 우선 → 없으면 LLM 호출.
 01-agents.md의 4개 소스 우선순위는 자산 구축 후 활성화.
 """
 from __future__ import annotations
 
+import json
+import re
+
 from app.llm import LLMClient
+from app.llm.prompts import SKELETON_SYSTEM
 from app.shared.types import DocType, SkeletonNode, SourceLlmInference
 from app.shared.types.agents.skeleton_composer import (
     CompositionContribution,
@@ -107,12 +111,46 @@ class SkeletonComposer:
                 ),
             )
 
-        # 미지의 문서 — 최소 5섹션 stub
+        # 시드 없음 → LLM 호출
+        return await self._compose_via_llm(doc_type)
+
+    async def _compose_via_llm(self, doc_type: DocType) -> SkeletonComposerOutput:
+        user_msg = (
+            f"문서 종류: {doc_type.ko_name}\n"
+            f"canonical id: {doc_type.id}\n"
+            f"도메인: {doc_type.domain}\n"
+            f"분류: {' > '.join(doc_type.taxonomy_path) if doc_type.taxonomy_path else '미분류'}\n\n"
+            f"위 문서의 5개 섹션 골격을 JSON으로 설계하라."
+        )
+        try:
+            result = await self.llm.run_json(
+                tier="sonnet", system=SKELETON_SYSTEM, user=user_msg, max_tokens=1024
+            )
+            data = _parse_json(result.text)
+            sections = data.get("sections", []) if isinstance(data, dict) else []
+            nodes = _to_skeleton_nodes(sections)
+            if nodes:
+                source = _llm_inferred_source(confidence=0.7)
+                return SkeletonComposerOutput(
+                    skeleton=nodes,
+                    composition_meta=CompositionMeta(
+                        primary_source=source,
+                        contributions=[
+                            CompositionContribution(
+                                source=source, sections=[n.id for n in nodes]
+                            )
+                        ],
+                    ),
+                )
+        except Exception:
+            pass  # 실패 시 stub 폴백
+
+        # 최종 폴백 — 5섹션 stub
         source = _llm_inferred_source(confidence=0.3)
         nodes = [
             SkeletonNode(
                 id=f"sec_{i + 1}",
-                title=f"{i + 1}. (LLM 추론 섹션 {i + 1})",
+                title=f"{i + 1}. (섹션 {i + 1})",
                 role="(추론)",
                 logic_anchor=f"섹션 {i + 1}의 논점은?",
                 source=source,
@@ -130,3 +168,44 @@ class SkeletonComposer:
                 ],
             ),
         )
+
+
+# --- 파싱 헬퍼 -----------------------------------------------------------
+
+
+def _parse_json(text: str) -> dict | list | None:
+    """LLM 응답에서 JSON 추출. 코드 블록 감싸진 경우도 처리."""
+    text = text.strip()
+    # ```json ... ``` 또는 ``` ... ``` 제거
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.DOTALL)
+    if fence:
+        text = fence.group(1)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # 시작이 { 또는 [ 인 부분만 추출 시도
+        match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
+def _to_skeleton_nodes(sections: list) -> list[SkeletonNode]:
+    nodes: list[SkeletonNode] = []
+    source = _llm_inferred_source(confidence=0.7)
+    for i, sec in enumerate(sections[:5]):
+        if not isinstance(sec, dict):
+            continue
+        sid = str(sec.get("id") or f"sec_{i + 1}")
+        title = str(sec.get("title") or f"{i + 1}. (섹션 {i + 1})")
+        role = str(sec.get("role") or "")
+        anchor = str(sec.get("logic_anchor") or "")
+        nodes.append(
+            SkeletonNode(
+                id=sid, title=title, role=role, logic_anchor=anchor, source=source
+            )
+        )
+    return nodes

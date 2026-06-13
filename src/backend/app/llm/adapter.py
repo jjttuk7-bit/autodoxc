@@ -33,6 +33,19 @@ class LLMClient(Protocol):
         max_tokens: int = 1024,
     ) -> LLMResult: ...
 
+    async def run_json(
+        self,
+        *,
+        tier: Tier,
+        system: str,
+        user: str,
+        max_tokens: int = 2048,
+    ) -> LLMResult:
+        """JSON 강제 응답. OpenAI는 response_format=json_object,
+        Anthropic은 시스템 프롬프트에 JSON 형식 강제,
+        Dummy는 빈 JSON 반환."""
+        ...
+
 
 # --- OpenAI 구현 (ADR 0010 — 콜드스타트 1차) -------------------------------
 
@@ -160,6 +173,24 @@ class AnthropicLLMClient:
             model=model,
         )
 
+    async def run_json(
+        self,
+        *,
+        tier: Tier,
+        system: str,
+        user: str,
+        max_tokens: int = 2048,
+    ) -> LLMResult:
+        """Anthropic은 JSON 강제 기능 없음 — system 프롬프트에 강제 + run_text."""
+        json_system = (
+            system
+            + "\n\n# 응답 형식\n반드시 valid JSON object로만 답하라. "
+            + "코드 블록(```json) 없이 raw JSON만."
+        )
+        return await self.run_text(
+            tier=tier, system=json_system, user=user, max_tokens=max_tokens
+        )
+
 
 # --- Dummy 구현 -----------------------------------------------------------
 
@@ -186,5 +217,21 @@ class DummyLLMClient:
             text=text,
             input_tokens=(len(system) + len(user)) // 4,
             output_tokens=len(text) // 4,
+            model=f"dummy:{tier}",
+        )
+
+    async def run_json(
+        self,
+        *,
+        tier: Tier,
+        system: str,
+        user: str,
+        max_tokens: int = 2048,
+    ) -> LLMResult:
+        """Dummy: 빈 JSON 객체 반환 (호출자가 fallback 처리)."""
+        return LLMResult(
+            text="{}",
+            input_tokens=(len(system) + len(user)) // 4,
+            output_tokens=2,
             model=f"dummy:{tier}",
         )

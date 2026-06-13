@@ -1,14 +1,17 @@
 """#6 DraftWriter — 골격·사실·논리·근거를 종합해 섹션별 본문 작성.
 
-데모: doc_type별 본문 시드 분기. fact가 있으면 텍스트에 반영.
-B1-2 본격에서 LLM 기반 풀 구현으로 교체.
+B1-2: doc_type별 시드 우선 → 없으면 LLM 호출 (GPT-4o)로 본문 생성.
 """
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import AsyncIterator
 
 from app.llm import LLMClient
+from app.llm.prompts import DRAFT_SECTION_SYSTEM
 from app.shared.types import (
+    DocType,
     Draft,
     DraftParagraph,
     DraftSection,
@@ -16,11 +19,22 @@ from app.shared.types import (
     Fact,
     ParagraphAnnotation,
     ParagraphStatus,
+    SkeletonNode,
 )
 from app.shared.types.agents.draft_writer import (
     DraftWriterInput,
     DraftWriterOutput,
 )
+
+_SEEDED_DOC_TYPE_IDS = {
+    "foreign-worker-employment-plan",
+    "administrative-appeal",
+    "content-certified-mail",
+}
+
+_VALID_STATUSES: set[ParagraphStatus] = {
+    "confirmed", "inferred", "defaulted", "evidence_backed", "empty"
+}
 
 
 def _para(text: str, status: ParagraphStatus = "confirmed", **kw) -> DraftParagraph:
@@ -305,20 +319,75 @@ class DraftWriter:
     def _doc_type_id(self, input: DraftWriterInput) -> str | None:
         return input.doc_type.id if input.doc_type else None
 
+    async def _section_for_node(
+        self,
+        doc_type: DocType | None,
+        node: SkeletonNode,
+        facts: list[Fact],
+    ) -> DraftSection:
+        doc_type_id = doc_type.id if doc_type else None
+        if doc_type_id in _SEEDED_DOC_TYPE_IDS:
+            return _section_for(doc_type_id, node.id, node.title, facts)
+        # 시드 없음 → LLM 호출
+        if doc_type is None:
+            return _generic_section(node.id, node.title)
+        return await self._llm_section(doc_type, node, facts)
+
+    async def _llm_section(
+        self,
+        doc_type: DocType,
+        node: SkeletonNode,
+        facts: list[Fact],
+    ) -> DraftSection:
+        """GPT-4o로 섹션 본문 생성. 실패 시 generic stub."""
+        facts_block = (
+            "\n".join(f"- {f.field_id}: {f.value}" for f in facts)
+            if facts
+            else "(사용자 사실관계 정보 없음)"
+        )
+        user_msg = (
+            f"문서: {doc_type.ko_name} ({doc_type.id})\n"
+            f"도메인: {doc_type.domain}\n"
+            f"\n섹션: {node.title}\n"
+            f"역할: {node.role}\n"
+            f"답해야 할 논점: {node.logic_anchor}\n"
+            f"\n사용자 사실관계:\n{facts_block}\n"
+            f"\n이 섹션의 본문 문단들을 JSON으로 작성하라."
+        )
+        try:
+            result = await self.llm.run_json(
+                tier="sonnet",
+                system=DRAFT_SECTION_SYSTEM,
+                user=user_msg,
+                max_tokens=1024,
+            )
+            data = _parse_json(result.text)
+            paragraphs = (
+                _to_paragraphs(data["paragraphs"])
+                if isinstance(data, dict) and isinstance(data.get("paragraphs"), list)
+                else []
+            )
+            if paragraphs:
+                return DraftSection(
+                    skeleton_id=node.id, title=node.title, paragraphs=paragraphs
+                )
+        except Exception:
+            pass
+        return _generic_section(node.id, node.title)
+
     async def run(self, input: DraftWriterInput) -> DraftWriterOutput:
         target = (
             set(input.target_sections)
             if input.target_sections is not None
             else None
         )
-        doc_type_id = self._doc_type_id(input)
         sections: list[DraftSection] = []
         empty_slots: list[EmptySlot] = []
 
         for node in input.skeleton:
             if target is not None and node.id not in target:
                 continue
-            s = _section_for(doc_type_id, node.id, node.title, input.facts)
+            s = await self._section_for_node(input.doc_type, node, input.facts)
             sections.append(s)
 
             for p in s.paragraphs:
@@ -337,14 +406,57 @@ class DraftWriter:
         )
 
     async def stream(self, input: DraftWriterInput) -> AsyncIterator[DraftSection]:
-        """섹션별 점진 스트리밍 (04-orchestration §2.1의 onSection 패턴)."""
+        """섹션별 점진 스트리밍 — 시드는 즉시, LLM 호출 섹션은 응답 후 yield."""
         target = (
             set(input.target_sections)
             if input.target_sections is not None
             else None
         )
-        doc_type_id = self._doc_type_id(input)
         for node in input.skeleton:
             if target is not None and node.id not in target:
                 continue
-            yield _section_for(doc_type_id, node.id, node.title, input.facts)
+            yield await self._section_for_node(input.doc_type, node, input.facts)
+
+
+# --- 파싱 헬퍼 -----------------------------------------------------------
+
+
+def _parse_json(text: str) -> dict | list | None:
+    text = text.strip()
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.DOTALL)
+    if fence:
+        text = fence.group(1)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
+def _to_paragraphs(items: list) -> list[DraftParagraph]:
+    paragraphs: list[DraftParagraph] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        status_raw = str(item.get("status") or "inferred")
+        status: ParagraphStatus = (
+            status_raw if status_raw in _VALID_STATUSES else "inferred"  # type: ignore[assignment]
+        )
+        needs_user_input = bool(item.get("needs_user_input") or (status == "empty"))
+        paragraphs.append(
+            DraftParagraph(
+                text=text,
+                annotations=ParagraphAnnotation(
+                    status=status, needs_user_input=needs_user_input
+                ),
+            )
+        )
+    return paragraphs
