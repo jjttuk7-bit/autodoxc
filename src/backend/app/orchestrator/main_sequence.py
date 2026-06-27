@@ -150,6 +150,13 @@ async def run_main_sequence(
                 on_evidence(ev_out.evidences)
             yield EvidencesFoundEvent(evidences=ev_out.evidences)
             await asyncio.sleep(0.2)
+        elif retriever.last_error:
+            # 법령 API 실패 — egress 진단용 (user_visible=False, 진단 시 stream에서 확인)
+            yield AgentFailedEvent(
+                agent="evidence_retriever",
+                fallback_taken=f"법령 조회 실패: {retriever.last_error}",
+                user_visible=False,
+            )
 
     # #3 GapAnalyzer 모킹 — doc_type별 다른 질문
     question = _mock_question_for(id_out.doc_type.id)

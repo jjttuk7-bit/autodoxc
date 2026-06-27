@@ -11,6 +11,7 @@ import re
 
 from app.llm import LLMClient
 from app.llm.prompts import SKELETON_SYSTEM
+from app.shared.errors import format_exception_chain as _format_error
 from app.shared.types import DocType, SkeletonNode, SourceLlmInference
 from app.shared.types.agents.skeleton_composer import (
     CompositionContribution,
@@ -153,7 +154,7 @@ class SkeletonComposer:
                 self.last_error, result.model, result.text,
             )
         except Exception as e:
-            self.last_error = f"{type(e).__name__}: {e}"
+            self.last_error = _format_error(e)
             logger.exception("SkeletonComposer LLM 호출 실패 → stub 폴백")
 
         # 최종 폴백 — 5섹션 stub

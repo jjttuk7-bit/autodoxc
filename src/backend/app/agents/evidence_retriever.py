@@ -15,6 +15,7 @@ RAG·판례·통계 소스는 2단계(DB 연결 후) 확장.
 from __future__ import annotations
 
 from app.data.external import LawClient, get_law_client
+from app.shared.errors import format_exception_chain as _format_error
 from app.shared.types import DocType, Evidence, EvidenceNeed
 from app.shared.types.agents.evidence_retriever import (
     EvidenceRetrieverInput,
@@ -68,6 +69,7 @@ class EvidenceRetriever:
 
     def __init__(self, law: LawClient | None = None):
         self.law = law or get_law_client()
+        self.last_error: str | None = None  # 법령 API 실패 사유 (진단·egress 확인용)
 
     async def run(
         self, input: EvidenceRetrieverInput
@@ -95,9 +97,13 @@ class EvidenceRetriever:
             result = await self.law.search(
                 LawQuery(query=need.query, max_results=1)
             )
-        except Exception:
+        except Exception as e:
+            self.last_error = _format_error(e)
             return None
-        if result.error or not result.items:
+        if result.error:
+            self.last_error = result.error
+            return None
+        if not result.items:
             return None
 
         hit = result.items[0]

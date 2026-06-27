@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 
 from app.llm import LLMClient
 from app.llm.prompts import DRAFT_SECTION_SYSTEM
+from app.shared.errors import format_exception_chain as _format_error
 from app.shared.types import (
     DocType,
     Draft,
@@ -478,7 +479,7 @@ class DraftWriter:
                 node.id, self.last_error, result.model, result.text,
             )
         except Exception as e:
-            self.last_error = f"{type(e).__name__}: {e}"
+            self.last_error = _format_error(e)
             logger.exception("DraftWriter LLM 호출 실패(%s) → stub 폴백", node.id)
         return _generic_section(node.id, node.title)
 
