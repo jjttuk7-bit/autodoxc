@@ -6,6 +6,7 @@ import { connectStream } from "../streaming/sse-client";
 import type {
   DocType,
   DraftSection,
+  Evidence,
   Fact,
   SkeletonNode,
   StreamEvent,
@@ -36,6 +37,39 @@ export async function startSessionStream(
   onEvent: (e: StreamEvent) => void
 ): Promise<void> {
   await connectStream(sessionId, onEvent);
+}
+
+export interface AttachmentUploadResponse {
+  attachment_id: string;
+  file_name: string;
+  format: string;
+  extracted: boolean;
+  section_titles: string[];
+  warnings: string[];
+}
+
+/** 첨부 양식 업로드 → 백엔드가 DA4로 파싱·골격 추출. stream 시작 전에 호출. */
+export async function uploadAttachment(
+  sessionId: string,
+  file: File
+): Promise<AttachmentUploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/attachment`), {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return (await res.json()) as AttachmentUploadResponse;
 }
 
 // --- B1-4: 인라인 편집·답변 ----------------------------------------------
@@ -105,6 +139,7 @@ export interface SessionStateResponse {
   skeleton: SkeletonNode[];
   facts: Fact[];
   sections: DraftSection[];
+  evidences?: Evidence[];
   is_complete: boolean;
   updated_at: string;
 }

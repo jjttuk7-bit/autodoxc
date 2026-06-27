@@ -1,8 +1,8 @@
 # autodoxc — Session Status
 
 > **목적**: 다음 세션 진행 시 이 파일을 먼저 확인. 어디까지 됐고 어디로 갈지 한눈에.
-> **마지막 갱신**: 2026-06-13
-> **메인 브랜치 HEAD**: `f7de4c8` — 자리표시자 부분만 인라인 input
+> **마지막 갱신**: 2026-06-28
+> **메인 브랜치 HEAD**: `aac71c8` 위 작업분(미커밋) — #5 EvidenceRetriever 1단계 + 첨부 양식 업로드→골격 추출 (2건 묶어서 커밋 예정)
 
 ---
 
@@ -38,6 +38,8 @@
 7. **세션 영속** — Railway 메모리 + URL 복구 → 새로고침 후에도 작업 유지
 8. **`.docx` 다운로드** — `[[..]]`는 `(  필드명          )`로 변환, 행정문서 표준 빈 칸
 9. **새 세션** 버튼 → URL 정리 + 처음으로
+10. **법령 근거 자동 검증 (#5 EvidenceRetriever 1단계)** — 시드 doc_type 본문이 인용한 법령(외국인근로자고용법·행정절차법·민법)을 국가법령정보센터 API로 실시간 조회 → `evidences_found` SSE 이벤트 + `/state.evidences`로 노출. 생성 Evidence.id가 시드 evidence_refs와 일치해 문단↔근거 연결 가능. (프론트 근거 패널 렌더링은 미연결 — 다음 단계)
+11. **첨부 양식 → 골격 추출** — 시작 화면 「양식 첨부」로 `.docx/.pdf/.txt` 업로드 → DA4 파서로 파싱 → heading 구조를 골격(`att_sec_N`, source=`user_attached`)으로 추출 → stream 시 SkeletonComposer 대신 채택(소스 우선순위 최상위). 텍스트 없이 첨부만으로도 시작 가능. 제목 없는 문서는 폴백(일반 구성).
 
 ---
 
@@ -58,7 +60,7 @@
 
 | Task | 내용 | 가치 | 외부 의존 |
 |---|---|---|---|
-| **#22 B1-5** | 시드 코퍼스 RAG 인덱싱 (관련 법령·재결례 50~100건) | 법령 인용·근거 자동 보강 | **Postgres + pgvector** 필요 |
+| **#22 B1-5** | 시드 코퍼스 RAG 인덱싱 (관련 법령·재결례 50~100건) | 법령 인용·근거 자동 보강 | **Postgres + pgvector** 필요 — 단, 법령 단건 검증은 #5 EvidenceRetriever 1단계로 **선반영** (API 직접 조회, RAG 무관) |
 | **#23 B1-6** | 도메인 검증 — LLM-as-judge 활성화 + 톤·법령 인용 회귀 fixture | 품질 보증 | 없음 |
 | **#24 B1-7** | E2E S1 시나리오 자동화 (Playwright) | 회귀 인프라 | 없음 |
 
@@ -91,12 +93,31 @@
 
 ---
 
+## 5.5 "완성됐는데 본선 미연결" 인벤토리 (2026-06-28 전수 점검)
+
+> 부품은 만들어졌으나 오케스트레이터(`main_sequence.py`)·API에 안 물린 것. 새로 만들 게 아니라 **배선**이 남은 것들.
+
+| 부품 | 완성도 | 막힌 지점 | 연결에 필요한 것 |
+|---|---|---|---|
+| **법령 API (`LawClient`)** | ✅ 완성·테스트, OC 키 Railway 라이브 | ~~호출 코드 0~~ → **#5에서 연결됨** | (1단계 완료) |
+| **#5 EvidenceRetriever** | ✅ **1단계 구현·본선 연결** (`app/agents/evidence_retriever.py`) | statute만 / 시드 doc_type만 | 2단계: 판례·통계·RAG 소스 + LLM 본문 evidence_needs |
+| **DA4 파서 파이프라인** | ✅ docx/pdf/txt (`app/parsers/`) | ~~업로드 엔드포인트 없음~~ → **연결됨** (`POST /attachment` → `skeleton_extract` → 골격) | (1단계 완료) PDF OCR·hwp·이미지는 B2 |
+| **RAG 레이어** | ✅ 하이브리드 검색 (`app/data/rag/`) | DATABASE_URL 비어 `get_pool()` None → `[]`; 호출 0; 코퍼스 미인덱싱 | DB 연결 + 코퍼스 인덱싱 + 검색 호출처 |
+| **#3 GapAnalyzer** | 🟡 모킹 (doc_type별 고정 질문 1개) | 시스템적 갭 진단 없음 | 본구현 |
+| **#4 LogicArchitect** | ❌ 미구현 | — | 신규 (evidence_needs 생성 → #5 공급) |
+| **#7 SelfReviewer** | ❌ 미구현 (모킹 생략) | — | 신규 |
+
+가성비 순: ① ~~법령 연결(완료)~~ → ② ~~첨부 업로드→DA4→골격(완료)~~ → ③ DB(Supabase)→RAG 가동 → ④ #4 LogicArchitect → #5 2단계(판례·통계).
+
+---
+
 ## 6. 명세 외 UX·기능 갭 (작업하며 발견)
 
 | 항목 | 현재 상태 | 효과 |
 |---|---|---|
-| **첨부 파일 업로드** | UI 시안 있고 백엔드 파서(DA4) 있음, 연결 X | 사용자 양식을 골격으로 즉시 채택 |
-| **사이드 패널** | 골격 탭만 부분 작동, 근거/라이브러리 비활성 | 보조 정보 한눈에 |
+| **첨부 파일 업로드** | ✅ **연결됨** — `.docx/.pdf/.txt` → 골격 추출 → user_attached 채택. (남은 것: 첨부 양식의 본문 시드 매핑 없음 → 본문은 generic/LLM stub; .hwp·OCR은 B2) | 사용자 양식을 골격으로 즉시 채택 |
+| **사이드 패널 — 근거 탭** | 백엔드는 `evidences_found`·`/state.evidences`로 법령 근거 제공하나 프론트 렌더링 X (`session-store` switch에 `evidences_found` 케이스 없음) | 검증된 법령을 클릭형 근거로 표시 |
+| **사이드 패널 — 라이브러리 탭** | 비활성 | 보조 정보 한눈에 |
 | **인라인 질문 1턴 1개 → 다중** | 단일 질문만 모킹 | 더 풍부한 갭 분석 |
 | **DB 영속화** | 메모리만. Railway 재시작 시 사라짐 | Supabase Postgres 연결로 영구 |
 | **추정값 팝오버** | 노란 배경만, 근거 표시 X | 신뢰 확보 |
@@ -164,6 +185,12 @@
 - **시드 본문에 facts 인터폴레이션 불완전** — `industry`/`core_skill` 같은 일부만. 새 자리표시자 추가 시 매핑 동반 필요.
 - **자동 npm run gen:types 안 됨 (배포 환경)** — 백엔드 OpenAPI 변경 시 로컬에서 한 번 실행 후 푸시 필요.
 - **편집 작성자 정보** — 한 IP에서 여러 세션 가능 (인증 X). Phase B3 인증 도입 전까지 공유 X.
+- **법령 근거 — 프론트 미렌더링** — 백엔드 #5는 `evidences_found` 이벤트·`/state.evidences`를 내보내나 `session-store.ts` switch에 케이스가 없어 화면에 안 보임(무해하게 무시됨). 근거 패널 연결이 다음 프론트 작업.
+- **법령 근거 — 시드 doc_type만** — `_SEED_STATUTE_NEEDS`에 등록된 3종(외국인고용·행정심판·내용증명)만 검증. LLM 생성 본문은 evidence_refs가 없어 #5가 동작 안 함. doc_type 추가 시 시드 매핑 동반 필요.
+- **법령 인용 표시값은 시드 고정** — Evidence.citation의 정밀 조문(「민법」제390조)은 `_SEED_STATUTE_NEEDS`의 표시 문자열. API는 법령 존재·source_url 검증만 (조문 단위 조회 아님). 조문 단위 정밀 조회는 2단계.
+- **첨부 골격 본문은 stub/LLM** — 첨부 양식의 `att_sec_N`은 시드 본문 매핑이 없어 DraftWriter가 generic stub(시드 doc_type일 때) 또는 LLM(비시드 doc_type)으로 채움. 첨부 양식 자체의 문구를 본문 시드로 쓰는 건 미구현.
+- **첨부 양식 비영속** — 파싱 후 임시파일 즉시 삭제, 추출 골격만 메모리 세션에 보관(`ctx.attached_skeleton`). Railway 재시작 시 사라짐. storage_uri 영구 저장은 DB·오브젝트 스토리지 도입 후.
+- **`python-multipart` 의존 추가** — 업로드용. `pyproject.toml`에 반영했으나 배포(Railway) 재빌드 시 설치 확인 필요.
 
 ---
 
@@ -174,7 +201,12 @@
 | 백엔드 진입 | `src/backend/app/main.py` |
 | 세션 endpoint | `src/backend/app/api/sessions.py` |
 | 오케스트레이터 | `src/backend/app/orchestrator/main_sequence.py` |
-| 에이전트 4개 | `src/backend/app/agents/{doc_type_identifier,skeleton_composer,facts_extractor,draft_writer}.py` |
+| 에이전트 5개 | `src/backend/app/agents/{doc_type_identifier,skeleton_composer,facts_extractor,draft_writer,evidence_retriever}.py` |
+| 법령 근거 시드 매핑 | `src/backend/app/agents/evidence_retriever.py:_SEED_STATUTE_NEEDS` (evidence_id ↔ 검색어 ↔ 표시 인용) |
+| 법령 API 클라이언트 | `src/backend/app/data/external/law_api.py:LawClient` |
+| 첨부 골격 추출 | `src/backend/app/parsers/skeleton_extract.py:skeleton_from_parse` (heading → att_sec_N) |
+| 첨부 업로드 endpoint | `src/backend/app/api/sessions.py:upload_attachment` (`POST /api/sessions/{id}/attachment`) |
+| 프론트 업로드 UI | `src/frontend/src/components/start/StartScreen.tsx` (양식 첨부) + `client.ts:uploadAttachment` |
 | LLM 어댑터 | `src/backend/app/llm/adapter.py` |
 | 시드 본문 | `src/backend/app/agents/draft_writer.py:_foreign_worker_section` 등 |
 | 자리표시자 매핑 | `src/backend/app/agents/draft_writer.py:_FIELD_PLACEHOLDERS` |

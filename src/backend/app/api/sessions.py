@@ -12,22 +12,27 @@
 from __future__ import annotations
 
 import io
+import os
 import re
+import tempfile
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.agents import DraftWriter
 from app.llm import get_llm_client
 from app.orchestrator import run_main_sequence
+from app.parsers import parse
+from app.parsers.skeleton_extract import skeleton_from_parse
 from app.shared.types import (
     DocType,
     DraftSection,
+    Evidence,
     Fact,
     ParagraphAnnotation,
     SkeletonNode,
@@ -50,6 +55,9 @@ class SessionContext:
     skeleton: list[SkeletonNode] = field(default_factory=list)
     facts: list[Fact] = field(default_factory=list)
     sections: dict[str, DraftSection] = field(default_factory=dict)
+    evidences: dict[str, Evidence] = field(default_factory=dict)
+    attached_skeleton: list[SkeletonNode] = field(default_factory=list)
+    attachment_name: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -85,6 +93,15 @@ class CreateSessionResponse(BaseModel):
     session_id: str
 
 
+class AttachmentUploadResponse(BaseModel):
+    attachment_id: str
+    file_name: str
+    format: str
+    extracted: bool                       # 골격 추출 성공 여부
+    section_titles: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class FillRequest(BaseModel):
     section_id: str
     paragraph_idx: int = Field(ge=0)
@@ -115,6 +132,7 @@ class SessionStateResponse(BaseModel):
     skeleton: list[SkeletonNode]
     facts: list[Fact]
     sections: list[DraftSection]
+    evidences: list[Evidence]
     is_complete: bool
     updated_at: datetime
 
@@ -131,6 +149,78 @@ async def create_session(body: CreateSessionRequest) -> CreateSessionResponse:
     sid = _new_session_id()
     _SESSIONS[sid] = SessionContext(session_id=sid, user_input=body.user_input)
     return CreateSessionResponse(session_id=sid)
+
+
+# --- POST /api/sessions/{id}/attachment -----------------------------------
+
+
+_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024  # 10MB
+_ALLOWED_SUFFIXES = {".docx", ".pdf", ".txt", ".md"}
+
+
+@router.post(
+    "/{session_id}/attachment",
+    response_model=AttachmentUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_attachment(
+    session_id: str, file: UploadFile = File(...)
+) -> AttachmentUploadResponse:
+    """첨부 양식 업로드 → DA4 파싱 → 제목 구조로 골격 추출.
+
+    추출된 골격은 세션에 저장되어, 이후 stream 시 SkeletonComposer 대신 채택됨
+    (골격 소스 우선순위 user_attached 최상위).
+    """
+    ctx = _require_session(session_id)
+
+    file_name = file.filename or "attachment"
+    suffix = os.path.splitext(file_name)[1].lower()
+    if suffix not in _ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"지원하지 않는 형식: {suffix or '(없음)'} — docx/pdf/txt만 지원",
+        )
+
+    data = await file.read()
+    if len(data) > _MAX_ATTACHMENT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="파일이 너무 큽니다 (최대 10MB)",
+        )
+
+    attachment_id = uuid.uuid4().hex[:12]
+
+    # 임시 파일로 저장 → 파서 호출 → 즉시 삭제 (메모리 모드, 영구 저장 안 함)
+    tmp_path: str | None = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        result = parse(tmp_path, attachment_id=attachment_id)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    warnings = [w.message for w in result.warnings]
+    nodes = skeleton_from_parse(result, file_id=attachment_id)
+
+    if nodes:
+        ctx.attached_skeleton = nodes
+        ctx.attachment_name = file_name
+        ctx.touch()
+    elif not warnings:
+        warnings.append(
+            "제목 구조를 찾지 못해 골격을 추출하지 못했습니다 — 일반 골격 구성으로 진행됩니다."
+        )
+
+    return AttachmentUploadResponse(
+        attachment_id=attachment_id,
+        file_name=file_name,
+        format=result.format,
+        extracted=bool(nodes),
+        section_titles=[n.title for n in nodes],
+        warnings=warnings,
+    )
 
 
 # --- GET /api/sessions/{id}/stream ---------------------------------------
@@ -151,9 +241,11 @@ async def _orchestrate(ctx: SessionContext) -> AsyncGenerator[dict, None]:
     async for event in run_main_sequence(
         session_id=ctx.session_id,
         user_input=ctx.user_input,
+        attached_skeleton=ctx.attached_skeleton or None,
         on_skeleton=lambda dt, sk: _set_skeleton(ctx, dt, sk),
         on_facts=lambda fs: _set_facts(ctx, fs),
         on_section=lambda s: _upsert_section(ctx, s),
+        on_evidence=lambda evs: _set_evidences(ctx, evs),
     ):
         yield {"event": "message", "data": event.model_dump_json()}
 
@@ -173,6 +265,12 @@ def _set_facts(ctx: SessionContext, facts: list[Fact]) -> None:
 
 def _upsert_section(ctx: SessionContext, section: DraftSection) -> None:
     ctx.sections[section.skeleton_id] = section
+    ctx.touch()
+
+
+def _set_evidences(ctx: SessionContext, evidences: list[Evidence]) -> None:
+    for ev in evidences:
+        ctx.evidences[ev.id] = ev
     ctx.touch()
 
 
@@ -344,6 +442,7 @@ async def get_session_state(session_id: str) -> SessionStateResponse:
         skeleton=ctx.skeleton,
         facts=ctx.facts,
         sections=ordered_sections,
+        evidences=list(ctx.evidences.values()),
         is_complete=len(ordered_sections) == len(ctx.skeleton)
         and len(ctx.skeleton) > 0,
         updated_at=ctx.updated_at,

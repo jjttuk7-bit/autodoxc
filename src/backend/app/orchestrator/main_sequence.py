@@ -12,9 +12,11 @@ from datetime import datetime, timezone
 from app.agents import (
     DocTypeIdentifier,
     DraftWriter,
+    EvidenceRetriever,
     FactsExtractor,
     SkeletonComposer,
 )
+from app.agents.evidence_retriever import needs_for_doc_type
 from app.llm import LLMClient, TokenBudget, get_llm_client
 from app.shared.types import (
     AskUserEvent,
@@ -22,6 +24,8 @@ from app.shared.types import (
     DraftSection,
     DraftSectionEvent,
     EditingReadyEvent,
+    Evidence,
+    EvidencesFoundEvent,
     Fact,
     FactsExtractedEvent,
     Message,
@@ -30,6 +34,7 @@ from app.shared.types import (
     SkeletonReadyEvent,
     StreamEvent,
 )
+from app.shared.types.agents.evidence_retriever import EvidenceRetrieverInput
 from app.shared.types.agents.doc_type_identifier import DocTypeIdentifierInput
 from app.shared.types.agents.draft_writer import DraftWriterInput
 from app.shared.types.agents.facts_extractor import FactsExtractorInput
@@ -41,9 +46,11 @@ async def run_main_sequence(
     session_id: str,
     user_input: str,
     llm: LLMClient | None = None,
+    attached_skeleton: list[SkeletonNode] | None = None,
     on_skeleton: Callable[[DocType, list[SkeletonNode]], None] | None = None,
     on_facts: Callable[[list[Fact]], None] | None = None,
     on_section: Callable[[DraftSection], None] | None = None,
+    on_evidence: Callable[[list[Evidence]], None] | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """메인 시퀀스. on_* 콜백으로 호출자(SessionContext)가 결과를 누적할 수 있음."""
 
@@ -67,20 +74,26 @@ async def run_main_sequence(
     )
 
     # #1b SkeletonComposer
-    composer = SkeletonComposer(llm)
-    comp_out = await composer.run(
-        SkeletonComposerInput(doc_type=id_out.doc_type)
-    )
+    # 골격 소스 우선순위(01-agents.md §결정): user_attached > official_form > ... > llm
+    # → 첨부 양식에서 추출한 골격이 있으면 그것을 채택, 없으면 시드/LLM 구성.
+    if attached_skeleton:
+        skeleton = attached_skeleton
+    else:
+        composer = SkeletonComposer(llm)
+        comp_out = await composer.run(
+            SkeletonComposerInput(doc_type=id_out.doc_type)
+        )
+        skeleton = comp_out.skeleton
     if on_skeleton:
-        on_skeleton(id_out.doc_type, comp_out.skeleton)
-    yield SkeletonReadyEvent(doc_type=id_out.doc_type, skeleton=comp_out.skeleton)
+        on_skeleton(id_out.doc_type, skeleton)
+    yield SkeletonReadyEvent(doc_type=id_out.doc_type, skeleton=skeleton)
     await asyncio.sleep(0.2)  # UI 흐름 체감용 — B1에서 제거
 
     # #2 FactsExtractor
     extractor = FactsExtractor(llm)
     facts_out = await extractor.run(
         FactsExtractorInput(
-            user_input_history=history, skeleton=comp_out.skeleton
+            user_input_history=history, skeleton=skeleton
         )
     )
     if on_facts:
@@ -94,7 +107,7 @@ async def run_main_sequence(
     # #6 DraftWriter — 섹션별 점진 스트리밍
     writer = DraftWriter(llm)
     write_input = DraftWriterInput(
-        skeleton=comp_out.skeleton,
+        skeleton=skeleton,
         facts=facts_out.facts,
         doc_type=id_out.doc_type,
     )
@@ -103,6 +116,24 @@ async def run_main_sequence(
             on_section(section)
         yield DraftSectionEvent(section=section)
         await asyncio.sleep(0.4)  # 점진 체감
+
+    # #5 EvidenceRetriever — 본문이 인용한 법령을 국가법령정보센터 API로 검증·보강.
+    # 1단계: 시드 doc_type의 statute need만 해결 (RAG·판례는 2단계).
+    needs = needs_for_doc_type(id_out.doc_type.id)
+    if needs:
+        retriever = EvidenceRetriever()
+        ev_out = await retriever.run(
+            EvidenceRetrieverInput(
+                needs=needs,
+                doc_type=id_out.doc_type,
+                domain=id_out.doc_type.domain,
+            )
+        )
+        if ev_out.evidences:
+            if on_evidence:
+                on_evidence(ev_out.evidences)
+            yield EvidencesFoundEvent(evidences=ev_out.evidences)
+            await asyncio.sleep(0.2)
 
     # #3 GapAnalyzer 모킹 — doc_type별 다른 질문
     question = _mock_question_for(id_out.doc_type.id)

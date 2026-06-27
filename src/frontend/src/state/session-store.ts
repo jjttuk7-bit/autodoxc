@@ -12,6 +12,7 @@ import {
   fillSlot,
   getSessionState,
   startSessionStream,
+  uploadAttachment,
 } from "../api/client";
 
 type UIState = "idle" | "composing" | "drafting" | "editing" | "saved";
@@ -31,7 +32,7 @@ interface SessionStore {
   upsertSection: (s: DraftSection) => void;
   setPendingQuestion: (q: AskUserEvent | null) => void;
   pushSystem: (m: string) => void;
-  startSession: (userInput: string) => Promise<void>;
+  startSession: (userInput: string, attachment?: File | null) => Promise<void>;
   /** URL ?s=xxx 등으로 알게 된 sessionId의 세션 상태 복구. */
   restoreSession: (sessionId: string) => Promise<boolean>;
   reset: () => void;
@@ -152,7 +153,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     }
   },
 
-  startSession: async (userInput) => {
+  startSession: async (userInput, attachment) => {
     const { setSkeleton, upsertSection, setPendingQuestion, pushSystem } = get();
     set({
       ...initial(),
@@ -169,6 +170,24 @@ export const useSession = create<SessionStore>((set, get) => ({
     } catch (e) {
       set({ uiState: "idle", error: `세션 생성 실패: ${String(e)}` });
       return;
+    }
+
+    // 첨부 양식이 있으면 stream 시작 전 업로드 → 골격 추출
+    if (attachment) {
+      try {
+        const up = await uploadAttachment(sessionId, attachment);
+        if (up.extracted) {
+          pushSystem(
+            `첨부 양식 「${up.file_name}」에서 ${up.section_titles.length}개 섹션 골격 추출`
+          );
+        } else {
+          pushSystem(
+            `첨부 「${up.file_name}」: ${up.warnings[0] ?? "골격 추출 실패 — 일반 구성으로 진행"}`
+          );
+        }
+      } catch (e) {
+        pushSystem(`첨부 업로드 실패: ${String(e)} — 일반 구성으로 진행`);
+      }
     }
 
     const handler = (e: StreamEvent) => {

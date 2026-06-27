@@ -5,6 +5,7 @@ description = "autodoxc backend (walking skeleton)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
+    "python-multipart>=0.0.18",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "sse-starlette>=2.1",

@@ -35,6 +35,7 @@ pnpm-debug.log*
 # --- Vite ---
 src/frontend/dist/
 src/frontend/.vite/
+*.tsbuildinfo
 
 # --- IDE / OS ---
 .idea/
