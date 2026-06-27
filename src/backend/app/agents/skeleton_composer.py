@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from app.llm import LLMClient
@@ -70,6 +71,9 @@ _SEED_SKELETONS: dict[str, list[tuple[str, str, str, str]]] = {
 }
 
 
+logger = logging.getLogger(__name__)
+
+
 def _llm_inferred_source(confidence: float = 0.6) -> SourceLlmInference:
     return SourceLlmInference(confidence=confidence)
 
@@ -79,6 +83,7 @@ class SkeletonComposer:
 
     def __init__(self, llm: LLMClient):
         self.llm = llm
+        self.last_error: str | None = None  # LLM 폴백 사유 (진단·UX 노출용)
 
     async def run(
         self, input: SkeletonComposerInput
@@ -142,8 +147,14 @@ class SkeletonComposer:
                         ],
                     ),
                 )
-        except Exception:
-            pass  # 실패 시 stub 폴백
+            self.last_error = "LLM 응답에서 섹션을 추출하지 못함"
+            logger.warning(
+                "SkeletonComposer 폴백: %s — model=%s raw=%.200s",
+                self.last_error, result.model, result.text,
+            )
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            logger.exception("SkeletonComposer LLM 호출 실패 → stub 폴백")
 
         # 최종 폴백 — 5섹션 stub
         source = _llm_inferred_source(confidence=0.3)

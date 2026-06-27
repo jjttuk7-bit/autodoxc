@@ -19,6 +19,7 @@ from app.agents import (
 from app.agents.evidence_retriever import needs_for_doc_type
 from app.llm import LLMClient, TokenBudget, get_llm_client
 from app.shared.types import (
+    AgentFailedEvent,
     AskUserEvent,
     DocType,
     DraftSection,
@@ -76,6 +77,7 @@ async def run_main_sequence(
     # #1b SkeletonComposer
     # 골격 소스 우선순위(01-agents.md §결정): user_attached > official_form > ... > llm
     # → 첨부 양식에서 추출한 골격이 있으면 그것을 채택, 없으면 시드/LLM 구성.
+    composer: SkeletonComposer | None = None
     if attached_skeleton:
         skeleton = attached_skeleton
     else:
@@ -84,6 +86,13 @@ async def run_main_sequence(
             SkeletonComposerInput(doc_type=id_out.doc_type)
         )
         skeleton = comp_out.skeleton
+    if composer is not None and composer.last_error:
+        # 골격 LLM 생성 실패 → stub 폴백. 사유를 사용자/진단에 노출.
+        yield AgentFailedEvent(
+            agent="skeleton_composer",
+            fallback_taken=f"골격 생성 실패 → 임시 골격: {composer.last_error}",
+            user_visible=True,
+        )
     if on_skeleton:
         on_skeleton(id_out.doc_type, skeleton)
     yield SkeletonReadyEvent(doc_type=id_out.doc_type, skeleton=skeleton)
@@ -116,6 +125,13 @@ async def run_main_sequence(
             on_section(section)
         yield DraftSectionEvent(section=section)
         await asyncio.sleep(0.4)  # 점진 체감
+    if writer.last_error:
+        # 본문 LLM 생성 실패 → stub 폴백. 사유를 사용자/진단에 노출.
+        yield AgentFailedEvent(
+            agent="draft_writer",
+            fallback_taken=f"본문 생성 실패 → 빈 섹션: {writer.last_error}",
+            user_visible=True,
+        )
 
     # #5 EvidenceRetriever — 본문이 인용한 법령을 국가법령정보센터 API로 검증·보강.
     # 1단계: 시드 doc_type의 statute need만 해결 (RAG·판례는 2단계).

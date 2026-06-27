@@ -215,6 +215,11 @@ export const useSession = create<SessionStore>((set, get) => ({
           set({ uiState: "editing" });
           pushSystem("초안 완료 — 편집 가능");
           break;
+        case "agent_failed":
+          if (e.user_visible) {
+            pushSystem(`⚠️ ${e.fallback_taken}`);
+          }
+          break;
       }
     };
 
