@@ -5,7 +5,19 @@ OpenAI SDK의 APIConnectionError 등은 진짜 원인(httpx ConnectError/SSLErro
 """
 from __future__ import annotations
 
+import re
+
 _MAX_DEPTH = 3
+
+# 비밀정보 마스킹 — 에러 메시지에 API 키/토큰이 섞여 노출되는 것 방지.
+# (예: LocalProtocolError가 Authorization 헤더 값을 그대로 담는다.)
+_SECRET_RE = re.compile(
+    r"(sk-[A-Za-z0-9_\-]{6,}|Bearer\s+\S+|sk-proj-[A-Za-z0-9_\-]+)"
+)
+
+
+def redact_secrets(text: str) -> str:
+    return _SECRET_RE.sub("***REDACTED***", text)
 
 
 def format_exception_chain(exc: BaseException) -> str:
@@ -17,4 +29,4 @@ def format_exception_chain(exc: BaseException) -> str:
         parts.append(f"{type(cur).__name__}: {msg}" if msg else type(cur).__name__)
         cur = cur.__cause__ or cur.__context__
         depth += 1
-    return " | cause=".join(parts)
+    return redact_secrets(" | cause=".join(parts))

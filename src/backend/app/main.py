@@ -15,7 +15,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="autodoxc backend",
-    version="0.0.6",
+    version="0.0.7",
     description=f"deployed backend — LLM mode: {settings.llm_mode}",
 )
 

@@ -71,8 +71,10 @@ def get_settings() -> Settings:
         or os.environ.get("LLM_MODE")
         or "auto"
     ).lower()
-    openai_key = os.environ.get("OPENAI_API_KEY") or None
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY") or None
+    # .strip(): 환경변수에 붙은 개행·공백 제거 (Authorization 헤더 깨짐 방지).
+    # 키 끝의 '\n'은 LocalProtocolError(Illegal header value)를 유발한다.
+    openai_key = (os.environ.get("OPENAI_API_KEY") or "").strip() or None
+    anthropic_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None
     provider = _resolve_provider(declared, openai_key, anthropic_key)
 
     defaults = _OPENAI_DEFAULTS if provider == "openai" else _ANTHROPIC_DEFAULTS
@@ -94,7 +96,7 @@ def get_settings() -> Settings:
         session_token_budget=int(
             os.environ.get("LLM_SESSION_TOKEN_BUDGET", "200000")
         ),
-        open_law_oc=os.environ.get("OPEN_LAW_OC") or None,
+        open_law_oc=(os.environ.get("OPEN_LAW_OC") or "").strip() or None,
         open_law_format=os.environ.get("OPEN_LAW_FORMAT", "JSON"),
         open_law_cache_ttl=int(os.environ.get("OPEN_LAW_CACHE_TTL", "604800")),
         database_url=os.environ.get("DATABASE_URL") or None,
