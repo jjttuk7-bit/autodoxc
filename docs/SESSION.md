@@ -2,7 +2,7 @@
 
 > **목적**: 다음 세션 진행 시 이 파일을 먼저 확인. 어디까지 됐고 어디로 갈지 한눈에.
 > **마지막 갱신**: 2026-06-28
-> **메인 브랜치 HEAD**: `f5949be` — OpenAI 키 공백 버그 수정 (비시드 문서 LLM 생성 복구)
+> **메인 브랜치 HEAD**: `23a6be5` — doc_type 식별기 LLM 정식화 (비시드 문서도 종류별 골격)
 > **🔴 미해결 보안**: 진단 중 OpenAI 키가 스트림/로그에 노출됨 → **키 재발급(rotate) 필요**. 또 `OPEN_LAW_OC`가 프로덕션에 미설정(`not configured`)으로 확인됨 → 법령 근거 prod 미작동.
 
 ---
@@ -41,6 +41,7 @@
 9. **새 세션** 버튼 → URL 정리 + 처음으로
 10. **법령 근거 자동 검증 (#5 EvidenceRetriever 1단계)** — 시드 doc_type 본문이 인용한 법령(외국인근로자고용법·행정절차법·민법)을 국가법령정보센터 API로 실시간 조회 → `evidences_found` SSE 이벤트 + `/state.evidences`로 노출. 생성 Evidence.id가 시드 evidence_refs와 일치해 문단↔근거 연결 가능. (프론트 근거 패널 렌더링은 미연결 — 다음 단계)
 11. **첨부 양식 → 골격 추출** — 시작 화면 「양식 첨부」로 `.docx/.pdf/.txt` 업로드 → DA4 파서로 파싱 → heading 구조를 골격(`att_sec_N`, source=`user_attached`)으로 추출 → stream 시 SkeletonComposer 대신 채택(소스 우선순위 최상위). 텍스트 없이 첨부만으로도 시작 가능. 제목 없는 문서는 폴백(일반 구성).
+12. **모든 문서 종류 작성 (doc_type LLM 분류)** — 시드 3종 외 입력도 LLM 구조화 분류(`DOC_TYPE_SYSTEM`)로 canonical id·ko_name·domain 도출 → SkeletonComposer가 종류별 골격 생성. 예: 사업자등록증→business-registration(permit)→신청인/요건/첨부 골격. (이전엔 전부 "행정문서 일반"+목적/배경/분석 generic이었음). prod 0.0.8 검증 완료.
 
 ---
 
