@@ -9,6 +9,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 
+from app.agents.seed_docs import is_data_seed, render_section
 from app.llm import LLMClient
 from app.llm.prompts import DRAFT_SECTION_SYSTEM
 from app.shared.errors import format_exception_chain as _format_error
@@ -423,6 +424,12 @@ class DraftWriter:
         - doc_type 자체가 None: generic stub
         """
         doc_type_id = doc_type.id if doc_type else None
+        # 데이터 기반 시드(seed_docs.py) 우선
+        if is_data_seed(doc_type_id):
+            facts_lookup = {f.field_id: f.value for f in facts}
+            sec = render_section(doc_type_id, node.id, facts_lookup)
+            if sec is not None:
+                return sec
         if doc_type_id in _SEEDED_DOC_TYPE_IDS:
             section = _section_for(doc_type_id, node.id, node.title, facts)
             if facts:

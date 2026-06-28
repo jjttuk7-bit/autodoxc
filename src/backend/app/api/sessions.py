@@ -27,6 +27,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.agents import DraftWriter
 from app.llm import get_llm_client
 from app.orchestrator import run_main_sequence
+from app.agents.seed_docs import field_to_section_map as _seed_field_to_section
 from app.parsers import parse
 from app.parsers.skeleton_extract import skeleton_from_parse
 from app.shared.types import (
@@ -408,7 +409,9 @@ def _affected_sections(ctx: SessionContext, field_ids: list[str]) -> list[str]:
     """
     if not ctx.doc_type or not ctx.skeleton:
         return []
-    doc_map = _FIELD_TO_SECTION.get(ctx.doc_type.id, {})
+    doc_map = _FIELD_TO_SECTION.get(ctx.doc_type.id) or _seed_field_to_section(
+        ctx.doc_type.id
+    )
     affected: set[str] = set()
     for fid in field_ids:
         affected.update(doc_map.get(fid, []))

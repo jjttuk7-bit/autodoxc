@@ -9,6 +9,7 @@ import json
 import logging
 import re
 
+from app.agents.seed_docs import is_data_seed, seed_skeleton_nodes
 from app.llm import LLMClient
 from app.llm.prompts import SKELETON_SYSTEM
 from app.shared.errors import format_exception_chain as _format_error
@@ -90,8 +91,24 @@ class SkeletonComposer:
         self, input: SkeletonComposerInput
     ) -> SkeletonComposerOutput:
         doc_type = input.doc_type
-        seed = _SEED_SKELETONS.get(doc_type.id)
 
+        # 데이터 기반 시드(seed_docs.py)가 있으면 그 골격 사용
+        if is_data_seed(doc_type.id):
+            nodes = seed_skeleton_nodes(doc_type.id)
+            source = nodes[0].source if nodes else _llm_inferred_source(0.85)
+            return SkeletonComposerOutput(
+                skeleton=nodes,
+                composition_meta=CompositionMeta(
+                    primary_source=source,
+                    contributions=[
+                        CompositionContribution(
+                            source=source, sections=[n.id for n in nodes]
+                        )
+                    ],
+                ),
+            )
+
+        seed = _SEED_SKELETONS.get(doc_type.id)
         if seed:
             source = _llm_inferred_source(confidence=0.85)
             nodes = [

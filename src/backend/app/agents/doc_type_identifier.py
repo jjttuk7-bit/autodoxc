@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 
+from app.agents.seed_docs import doc_type_by_keyword as seed_doc_type_by_keyword
 from app.llm import LLMClient, tier_for_agent
 from app.llm.prompts import DOC_TYPE_SYSTEM
 from app.shared.types import DocType
@@ -71,6 +72,12 @@ class DocTypeIdentifier:
                     confidence=0.92,
                     signals=[f"키워드:{kw}"],
                 )
+        # 데이터 기반 시드 키워드 (seed_docs.py)
+        data_dt = seed_doc_type_by_keyword(text)
+        if data_dt is not None:
+            return DocTypeIdentifierOutput(
+                doc_type=data_dt, confidence=0.92, signals=["시드키워드"]
+            )
 
         # 2차: LLM 구조화 분류
         try:

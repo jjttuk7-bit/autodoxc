@@ -58,11 +58,21 @@ async def test_keyword_fast_path_skips_llm() -> None:
 
 @pytest.mark.asyncio
 async def test_dummy_unknown_falls_back_to_default() -> None:
-    # dummy run_json은 "{}" → 분류 실패 → default 강등
+    # 시드 키워드 없는 입력 + dummy run_json "{}" → 분류 실패 → default 강등
     agent = DocTypeIdentifier(DummyLLMClient(lambda s, u, t: "{}"))
-    out = await agent.run(DocTypeIdentifierInput(user_input="사업자등록증 신청서"))
+    out = await agent.run(DocTypeIdentifierInput(user_input="사내 공지문 작성해줘"))
     assert out.doc_type.id == "generic-administrative-doc"
     assert out.confidence <= 0.3
+
+
+@pytest.mark.asyncio
+async def test_data_seed_keyword_intercepts() -> None:
+    # 데이터 시드 키워드는 LLM 전에 가로채 해당 시드 doc_type 반환
+    agent = DocTypeIdentifier(DummyLLMClient(lambda s, u, t: "{}"))
+    out1 = await agent.run(DocTypeIdentifierInput(user_input="사업자등록 신청서 써줘"))
+    assert out1.doc_type.id == "business-registration"
+    out2 = await agent.run(DocTypeIdentifierInput(user_input="정보공개 청구하려고"))
+    assert out2.doc_type.id == "information-disclosure-request"
 
 
 @pytest.mark.asyncio
@@ -77,7 +87,8 @@ async def test_llm_classification_used_when_returned() -> None:
             return LLMResult(text=raw, input_tokens=1, output_tokens=1, model="fake")
 
     agent = DocTypeIdentifier(_FakeLLM())  # type: ignore[arg-type]
-    out = await agent.run(DocTypeIdentifierInput(user_input="사업자등록증 신청서 써줘"))
+    # 시드 키워드 없는 입력 → LLM 분류 경로로 진입
+    out = await agent.run(DocTypeIdentifierInput(user_input="이 문서 좀 만들어줘"))
     assert out.doc_type.id == "business-registration"
     assert out.doc_type.domain == "permit"
     assert out.confidence == 0.8
