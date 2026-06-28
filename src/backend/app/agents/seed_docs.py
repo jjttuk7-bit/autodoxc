@@ -421,6 +421,244 @@ _PRE_DISPOSITION_OPINION = SeedDoc(
 )
 
 
+# --- 계약 서류 -------------------------------------------------------------
+
+_HOUSING_LEASE = SeedDoc(
+    id="housing-lease-agreement",
+    ko_name="주택 임대차 계약서",
+    domain="other",
+    keywords=["임대차 계약", "임대차계약"],
+    taxonomy_path=["계약", "부동산"],
+    agency="",
+    sections=[
+        SeedSection(
+            "sec_1", "1. 계약 당사자", "임대인·임차인 표시", "당사자가 누구인가?",
+            [
+                SeedPara("임대인(갑) 성명: [[임대인 성명]], 주소: [[임대인 주소]]", "empty",
+                         {"lessor_name": "[[임대인 성명]]", "lessor_address": "[[임대인 주소]]"}),
+                SeedPara("임차인(을) 성명: [[임차인 성명]], 주소: [[임차인 주소]]", "empty",
+                         {"lessee_name": "[[임차인 성명]]", "lessee_address": "[[임차인 주소]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_2", "2. 부동산의 표시", "임대 목적물", "무엇을 임대하는가?",
+            [
+                SeedPara("제1조(목적물) 임대인은 아래 부동산을 임차인에게 임대하고 임차인은 이를 임차한다.",
+                         "evidence_backed", evidence_refs=["ev_civil_618"]),
+                SeedPara("소재지: [[목적물 소재지]]", "empty",
+                         {"property_address": "[[목적물 소재지]]"}),
+                SeedPara("구조·용도: [[구조·용도]], 면적: [[면적]]제곱미터", "empty",
+                         {"property_structure": "[[구조·용도]]", "property_area": "[[면적]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_3", "3. 보증금 및 차임", "보증금·월차임·지급방법", "임대 조건은?",
+            [
+                SeedPara("제2조(보증금) 임차인은 임대인에게 보증금으로 금 [[보증금]]원을 지급한다.",
+                         "empty", {"deposit": "[[보증금]]"}),
+                SeedPara("제3조(차임) 임차인은 월 차임으로 금 [[월 차임]]원을 매월 [[차임 지급일]]일에 "
+                         "임대인이 지정하는 계좌로 지급한다.", "empty",
+                         {"monthly_rent": "[[월 차임]]", "rent_due_day": "[[차임 지급일]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_4", "4. 임대차 기간 및 의무", "기간·용도·수선·전대금지·원상복구", "기간과 의무는?",
+            [
+                SeedPara("제4조(임대차 기간) 임대차 기간은 [[임대 시작일]]부터 [[임대 종료일]]까지로 한다.",
+                         "empty", {"lease_start": "[[임대 시작일]]", "lease_end": "[[임대 종료일]]"}),
+                SeedPara("제5조(용도 및 전대 금지) 임차인은 목적물을 주거 용도로만 사용하며, "
+                         "임대인의 동의 없이 전대하거나 임차권을 양도하지 못한다.", "defaulted"),
+                SeedPara("제6조(원상복구) 임차인은 임대차 종료 시 목적물을 원상으로 회복하여 반환한다.",
+                         "defaulted"),
+            ],
+        ),
+        SeedSection(
+            "sec_5", "5. 특약사항", "당사자 합의 특약", "추가 합의는?",
+            [
+                SeedPara("특약사항: [[특약사항]]", "empty", {"special_terms": "[[특약사항]]"}),
+                SeedPara("본 계약을 증명하기 위하여 계약서 2통을 작성하여 임대인과 임차인이 "
+                         "각각 서명·날인한 후 1통씩 보관한다.", "defaulted"),
+            ],
+        ),
+    ],
+)
+
+
+_EMPLOYMENT_CONTRACT = SeedDoc(
+    id="employment-contract",
+    ko_name="표준 근로계약서",
+    domain="other",
+    keywords=["근로계약"],
+    taxonomy_path=["계약", "노무"],
+    agency="",
+    sections=[
+        SeedSection(
+            "sec_1", "1. 근로 당사자", "사용자·근로자 표시", "당사자가 누구인가?",
+            [
+                SeedPara("사용자(갑) 사업체명: [[사업체명]], 대표자: [[사용자 성명]]", "empty",
+                         {"employer_company": "[[사업체명]]", "employer_name": "[[사용자 성명]]"}),
+                SeedPara("근로자(을) 성명: [[근로자 성명]], 생년월일: [[근로자 생년월일]]", "empty",
+                         {"employee_name": "[[근로자 성명]]", "employee_birth": "[[근로자 생년월일]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_2", "2. 근로계약 기간", "계약 기간", "언제부터 언제까지인가?",
+            [
+                SeedPara("본 근로계약은 「근로기준법」 제17조에 따라 근로조건을 명시한다.",
+                         "evidence_backed", evidence_refs=["ev_labor_17"]),
+                SeedPara("근로계약 기간: [[근로 시작일]]부터 [[근로 종료일]]까지 "
+                         "(기간의 정함이 없는 경우 시작일만 기재).", "empty",
+                         {"work_start": "[[근로 시작일]]", "work_end": "[[근로 종료일]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_3", "3. 근무 장소 및 업무", "근무 장소·담당 업무", "어디서 무슨 일을 하는가?",
+            [
+                SeedPara("근무 장소: [[근무 장소]]", "empty", {"work_place": "[[근무 장소]]"}),
+                SeedPara("담당 업무: [[업무 내용]]", "empty", {"work_duty": "[[업무 내용]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_4", "4. 근로시간 및 휴일", "소정근로시간·휴게·휴일", "근로시간은?",
+            [
+                SeedPara("소정근로시간: [[시업 시각]]부터 [[종업 시각]]까지(휴게시간 제외).", "empty",
+                         {"work_from": "[[시업 시각]]", "work_to": "[[종업 시각]]"}),
+                SeedPara("휴게시간 및 주휴일: [[휴게·휴일]]", "empty",
+                         {"break_holiday": "[[휴게·휴일]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_5", "5. 임금", "임금·지급일·지급방법", "임금은 얼마이고 어떻게 주는가?",
+            [
+                SeedPara("임금: 월(시간)급 금 [[임금]]원", "empty", {"wage": "[[임금]]"}),
+                SeedPara("임금 지급일: 매월 [[임금 지급일]]일, 지급방법: [[지급방법 — 근로자 명의 계좌이체 등]]",
+                         "empty", {"pay_day": "[[임금 지급일]]",
+                                    "pay_method": "[[지급방법 — 근로자 명의 계좌이체 등]]"}),
+            ],
+        ),
+    ],
+)
+
+
+# --- 소송 서류 -------------------------------------------------------------
+
+_LOAN_CLAIM = SeedDoc(
+    id="loan-repayment-claim",
+    ko_name="대여금 반환 청구의 소(소장)",
+    domain="dispute",
+    keywords=["대여금"],
+    taxonomy_path=["소송", "민사"],
+    agency="관할 법원",
+    sections=[
+        SeedSection(
+            "sec_1", "1. 당사자", "원고·피고 표시", "누가 누구를 상대로 하는가?",
+            [
+                SeedPara("원고: [[원고 성명]] (주소: [[원고 주소]])", "empty",
+                         {"plaintiff_name": "[[원고 성명]]", "plaintiff_address": "[[원고 주소]]"}),
+                SeedPara("피고: [[피고 성명]] (주소: [[피고 주소]])", "empty",
+                         {"defendant_name": "[[피고 성명]]", "defendant_address": "[[피고 주소]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_2", "2. 청구 취지", "구하는 판결의 내용", "무엇을 구하는가?",
+            [
+                SeedPara("1. 피고는 원고에게 금 [[청구금액]]원 및 이에 대하여 [[기산일]]부터 "
+                         "이 사건 소장 부본 송달일까지는 연 5%, 그 다음 날부터 다 갚는 날까지는 "
+                         "연 12%의 각 비율로 계산한 돈을 지급하라.", "empty",
+                         {"claim_amount": "[[청구금액]]", "interest_start": "[[기산일]]"}),
+                SeedPara("2. 소송비용은 피고가 부담한다.", "defaulted"),
+                SeedPara("3. 제1항은 가집행할 수 있다.", "defaulted"),
+                SeedPara("라는 판결을 구합니다.", "confirmed"),
+            ],
+        ),
+        SeedSection(
+            "sec_3", "3. 청구 원인", "대여 사실과 미변제", "왜 청구하는가?",
+            [
+                SeedPara("1. 원고는 피고에게 [[대여일]] 금 [[대여금액]]원을 변제기 [[변제기]]로 정하여 "
+                         "대여하였습니다.", "empty",
+                         {"loan_date": "[[대여일]]", "loan_amount": "[[대여금액]]",
+                          "due_date": "[[변제기]]"}),
+                SeedPara("2. 「민법」 제598조에 따라 피고는 변제기에 위 대여금을 반환할 의무가 있으나, "
+                         "변제기가 지나도록 이를 반환하지 아니하고 있습니다.", "evidence_backed",
+                         evidence_refs=["ev_civil_598"]),
+                SeedPara("3. 따라서 원고는 피고에게 위 대여금 및 지연손해금의 지급을 구하기 위하여 "
+                         "이 사건 청구에 이르렀습니다.", "confirmed"),
+            ],
+        ),
+        SeedSection(
+            "sec_4", "4. 입증 방법", "증거", "무엇으로 입증하는가?",
+            [
+                SeedPara("갑 제1호증: 차용증(또는 금전소비대차계약서)", "defaulted"),
+                SeedPara("그 밖의 입증 방법: [[추가 입증 방법]]", "empty",
+                         {"evidence_method": "[[추가 입증 방법]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_5", "5. 첨부 서류 및 관할", "첨부 서류·관할 법원", "어디에 제출하는가?",
+            [
+                SeedPara("첨부 서류: 소장 부본 1통, 위 입증 방법 각 1통", "defaulted"),
+                SeedPara("관할 법원: [[관할 법원]]", "empty", {"court": "[[관할 법원]]"}),
+            ],
+        ),
+    ],
+)
+
+
+_PREPARED_BRIEF = SeedDoc(
+    id="prepared-brief",
+    ko_name="준비서면",
+    domain="dispute",
+    keywords=["준비서면"],
+    taxonomy_path=["소송", "민사"],
+    agency="관할 법원",
+    sections=[
+        SeedSection(
+            "sec_1", "1. 사건의 표시", "사건번호·당사자", "어느 사건인가?",
+            [
+                SeedPara("사건: [[사건번호]] [[사건명]]", "empty",
+                         {"case_no": "[[사건번호]]", "case_name": "[[사건명]]"}),
+                SeedPara("원고: [[원고]], 피고: [[피고]]", "empty",
+                         {"plaintiff": "[[원고]]", "defendant": "[[피고]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_2", "2. 주장의 요지", "이 서면에서 펼치는 핵심 주장", "핵심 주장은?",
+            [
+                SeedPara("[[당사자]]은(는) 다음과 같이 변론을 준비합니다.", "empty",
+                         {"party": "[[당사자]]"}),
+                SeedPara("주장의 요지: [[주장 요지]]", "empty",
+                         {"argument_summary": "[[주장 요지]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_3", "3. 상대방 주장에 대한 반박", "상대방 주장과 그에 대한 반박",
+            "상대방 주장을 어떻게 반박하는가?",
+            [
+                SeedPara("상대방의 주장: [[상대방 주장]]", "empty",
+                         {"opponent_argument": "[[상대방 주장]]"}),
+                SeedPara("이에 대한 반박: [[반박 내용]]", "empty",
+                         {"rebuttal": "[[반박 내용]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_4", "4. 법률상 주장", "적용 법령과 법리", "법적 근거는?",
+            [
+                SeedPara("적용 법령: [[적용 법령]]에 비추어 볼 때, [[법률상 주장]]", "empty",
+                         {"applicable_law": "[[적용 법령]]", "legal_argument": "[[법률상 주장]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_5", "5. 결론 및 입증", "결론과 입증 방법", "결론은?",
+            [
+                SeedPara("결론: [[결론]]", "empty", {"conclusion": "[[결론]]"}),
+                SeedPara("입증 방법: [[입증 방법]]", "empty",
+                         {"evidence_method": "[[입증 방법]]"}),
+            ],
+        ),
+    ],
+)
+
+
 SEED_DOCS: dict[str, SeedDoc] = {
     d.id: d
     for d in (
@@ -430,6 +668,10 @@ SEED_DOCS: dict[str, SeedDoc] = {
         _ADMIN_APPEAL_RESPONSE,
         _BUSINESS_REPORT,
         _PRE_DISPOSITION_OPINION,
+        _HOUSING_LEASE,
+        _EMPLOYMENT_CONTRACT,
+        _LOAN_CLAIM,
+        _PREPARED_BRIEF,
     )
 }
 

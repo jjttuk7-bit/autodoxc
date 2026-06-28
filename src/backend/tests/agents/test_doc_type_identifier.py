@@ -87,6 +87,20 @@ async def test_specific_seed_keyword_beats_legacy() -> None:
 
 
 @pytest.mark.asyncio
+async def test_contract_and_litigation_seed_keywords() -> None:
+    agent = DocTypeIdentifier(DummyLLMClient(lambda s, u, t: "{}"))
+    cases = {
+        "임대차 계약서 작성": "housing-lease-agreement",
+        "근로계약서 써줘": "employment-contract",
+        "대여금 반환 소장": "loan-repayment-claim",
+        "준비서면 작성해줘": "prepared-brief",
+    }
+    for text, expected in cases.items():
+        out = await agent.run(DocTypeIdentifierInput(user_input=text))
+        assert out.doc_type.id == expected, text
+
+
+@pytest.mark.asyncio
 async def test_llm_classification_used_when_returned() -> None:
     raw = '{"id":"business-registration","ko_name":"사업자등록 신청서","domain":"permit","confidence":0.8}'
 

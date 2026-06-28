@@ -19,6 +19,10 @@ def test_registry_has_seeds() -> None:
         "administrative-appeal-response",
         "business-report-food-lodging",
         "pre-disposition-opinion",
+        "housing-lease-agreement",
+        "employment-contract",
+        "loan-repayment-claim",
+        "prepared-brief",
     ):
         assert did in SEED_DOCS, did
         assert is_data_seed(did)
