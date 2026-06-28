@@ -1,16 +1,23 @@
 """#1a DocTypeIdentifier — 사용자 입력에서 문서 종류 식별.
 
-콜드스타트(DA1·DA2 비어있음)에서는 LLM 일반 지식에만 의존.
-Dummy 모드는 키워드 매칭으로 결정.
+1) 시드 키워드 빠른 경로 (외국인·내용증명·행정심판) — LLM 없이 즉시.
+2) 그 외에는 LLM 구조화 분류(run_json)로 ko_name·domain·id를 직접 도출.
+   → SkeletonComposer가 generic "행정문서 일반"이 아니라 실제 문서 종류 기반으로
+     골격을 구성하게 한다.
 """
 from __future__ import annotations
 
+import json
+import re
+
 from app.llm import LLMClient, tier_for_agent
+from app.llm.prompts import DOC_TYPE_SYSTEM
 from app.shared.types import DocType
 from app.shared.types.agents.doc_type_identifier import (
     DocTypeIdentifierInput,
     DocTypeIdentifierOutput,
 )
+from app.shared.types.primitives import Domain
 
 
 _KEYWORD_MAP: dict[str, DocType] = {
@@ -42,6 +49,8 @@ _DEFAULT = DocType(
     taxonomy_path=["일반"],
 )
 
+_VALID_DOMAINS: set[str] = {"dispute", "permit", "internal", "other"}
+
 
 class DocTypeIdentifier:
     name = "doc_type_identifier"
@@ -54,7 +63,7 @@ class DocTypeIdentifier:
     ) -> DocTypeIdentifierOutput:
         text = input.user_input
 
-        # 1차: 키워드 매칭 (모드 무관)
+        # 1차: 키워드 매칭 (시드 빠른 경로, 모드 무관)
         for kw, dt in _KEYWORD_MAP.items():
             if kw in text:
                 return DocTypeIdentifierOutput(
@@ -63,26 +72,22 @@ class DocTypeIdentifier:
                     signals=[f"키워드:{kw}"],
                 )
 
-        # 2차: LLM 호출 — 구조화 응답 파싱 부담 줄이려 dummy 흐름에서는 default
-        # 실제 LLM 모드에서도 응답 파싱 실패 시 default로 폴백
+        # 2차: LLM 구조화 분류
         try:
-            result = await self.llm.run_text(
+            result = await self.llm.run_json(
                 tier=tier_for_agent("doc_type_identifier"),
-                system=(
-                    "당신은 한국 행정문서 분류 전문가다. "
-                    "사용자 입력에서 작성하려는 문서 종류를 한 단어 또는 짧은 명칭으로 답하라."
-                ),
-                user=f"입력: {text}\n\n문서 종류 명칭 1개만:",
-                max_tokens=64,
+                system=DOC_TYPE_SYSTEM,
+                user=f"입력: {text}\n\n위 문서의 종류를 JSON으로 분류하라.",
+                max_tokens=256,
             )
-            # 단순 fallback: 응답 텍스트에 키워드가 있으면 매칭, 아니면 default
-            for kw, dt in _KEYWORD_MAP.items():
-                if kw in result.text:
-                    return DocTypeIdentifierOutput(
-                        doc_type=dt,
-                        confidence=0.7,
-                        signals=[f"LLM:{result.model}", f"키워드:{kw}"],
-                    )
+            parsed = _parse_doc_type(result.text)
+            if parsed is not None:
+                doc_type, confidence = parsed
+                return DocTypeIdentifierOutput(
+                    doc_type=doc_type,
+                    confidence=confidence,
+                    signals=[f"LLM:{result.model}"],
+                )
         except Exception as e:
             return DocTypeIdentifierOutput(
                 doc_type=_DEFAULT,
@@ -93,5 +98,68 @@ class DocTypeIdentifier:
         return DocTypeIdentifierOutput(
             doc_type=_DEFAULT,
             confidence=0.3,
-            signals=["키워드 없음, default 강등"],
+            signals=["분류 실패, default 강등"],
         )
+
+
+# --- 파싱 헬퍼 -----------------------------------------------------------
+
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(text: str) -> str:
+    slug = _SLUG_RE.sub("-", text.lower()).strip("-")
+    return slug or "classified-doc"
+
+
+def _parse_doc_type(raw: str) -> tuple[DocType, float] | None:
+    """LLM JSON 응답 → (DocType, confidence). ko_name 없으면 None."""
+    data = _parse_json(raw)
+    if not isinstance(data, dict):
+        return None
+    ko_name = str(data.get("ko_name") or "").strip()
+    if not ko_name:
+        return None
+
+    domain_raw = str(data.get("domain") or "other").strip()
+    domain: Domain = domain_raw if domain_raw in _VALID_DOMAINS else "other"  # type: ignore[assignment]
+
+    doc_id = str(data.get("id") or "").strip()
+    if not doc_id or not re.fullmatch(r"[a-z0-9][a-z0-9\-]*", doc_id):
+        doc_id = _slugify(doc_id) if doc_id else f"llm-{_slugify(ko_name)[:40]}"
+
+    taxonomy_raw = data.get("taxonomy_path")
+    taxonomy = (
+        [str(t).strip() for t in taxonomy_raw if str(t).strip()][:5]
+        if isinstance(taxonomy_raw, list)
+        else []
+    )
+
+    try:
+        confidence = float(data.get("confidence", 0.7))
+    except (TypeError, ValueError):
+        confidence = 0.7
+    confidence = max(0.0, min(1.0, confidence))
+
+    doc_type = DocType(
+        id=doc_id, ko_name=ko_name, domain=domain, taxonomy_path=taxonomy
+    )
+    return doc_type, confidence
+
+
+def _parse_json(text: str) -> dict | list | None:
+    text = text.strip()
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.DOTALL)
+    if fence:
+        text = fence.group(1)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                return None
+    return None

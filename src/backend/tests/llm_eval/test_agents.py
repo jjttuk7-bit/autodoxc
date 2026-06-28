@@ -7,6 +7,8 @@ import pytest
 
 from app.agents import DocTypeIdentifier, FactsExtractor, SkeletonComposer
 from app.llm import LLMClient
+from app.llm.adapter import DummyLLMClient
+from app.llm.factory import _dummy_responder
 from app.shared.types.agents.doc_type_identifier import DocTypeIdentifierInput
 from app.shared.types.agents.facts_extractor import FactsExtractorInput
 from app.shared.types.agents.skeleton_composer import SkeletonComposerInput
@@ -70,7 +72,11 @@ CASES = _collect_all_cases()
 )
 async def test_agent_fixture(case: FixtureCase) -> None:
     runner = _RUNNERS[case.agent]
-    result = await run_case(case, runner)
+    # fixture 산출물은 dummy 시드 기반 → 로컬에 실제 키가 있어도 dummy로 고정해
+    # 결정적으로 평가 (실 LLM 분류 회귀는 별도 prod 검증으로 확인).
+    result = await run_case(
+        case, runner, llm=DummyLLMClient(_dummy_responder), is_dummy=True
+    )
 
     # assertion 결과 출력 (pytest -v로 보기)
     print(f"\n=== {case.agent}/{case.case_id} ===")
