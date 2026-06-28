@@ -2,7 +2,8 @@
 
 > **목적**: 다음 세션 진행 시 이 파일을 먼저 확인. 어디까지 됐고 어디로 갈지 한눈에.
 > **마지막 갱신**: 2026-06-28
-> **메인 브랜치 HEAD**: `aac71c8` 위 작업분(미커밋) — #5 EvidenceRetriever 1단계 + 첨부 양식 업로드→골격 추출 (2건 묶어서 커밋 예정)
+> **메인 브랜치 HEAD**: `f5949be` — OpenAI 키 공백 버그 수정 (비시드 문서 LLM 생성 복구)
+> **🔴 미해결 보안**: 진단 중 OpenAI 키가 스트림/로그에 노출됨 → **키 재발급(rotate) 필요**. 또 `OPEN_LAW_OC`가 프로덕션에 미설정(`not configured`)으로 확인됨 → 법령 근거 prod 미작동.
 
 ---
 
@@ -191,6 +192,9 @@
 - **첨부 골격 본문은 stub/LLM** — 첨부 양식의 `att_sec_N`은 시드 본문 매핑이 없어 DraftWriter가 generic stub(시드 doc_type일 때) 또는 LLM(비시드 doc_type)으로 채움. 첨부 양식 자체의 문구를 본문 시드로 쓰는 건 미구현.
 - **첨부 양식 비영속** — 파싱 후 임시파일 즉시 삭제, 추출 골격만 메모리 세션에 보관(`ctx.attached_skeleton`). Railway 재시작 시 사라짐. storage_uri 영구 저장은 DB·오브젝트 스토리지 도입 후.
 - **`python-multipart` 의존 추가** — 업로드용. `pyproject.toml`에 반영했으나 배포(Railway) 재빌드 시 설치 확인 필요.
+- **[해결됨] 비시드 문서 빈 스텁 — 키 공백 버그** — 2026-06-28 진단. 프로덕션 `OPENAI_API_KEY`에 trailing `\n` + leading space가 섞여 `Authorization` 헤더가 깨짐(`LocalProtocolError: Illegal header value`) → 모든 LLM 호출이 `APIConnectionError`로 실패 → 시드 외 문서가 빈 스텁. **코드/키/billing 문제 아니었음.** `config.py`에서 키를 `.strip()`으로 정규화해 수정(`f5949be`). 교훈: 환경변수 비밀값은 항상 strip. 단, **Railway 환경변수 자체도 깨끗이 재입력 권장**(개행 제거).
+- **[보안] 진단 중 키 노출** — `AgentFailedEvent`가 에러 메시지에 키 전문을 스트림으로 노출했음. 지금은 `redact_secrets`로 마스킹(`sk-*`/`Bearer`). 그러나 노출된 키는 **반드시 폐기·재발급**. (이 세션 로그·커밋 이전 시점 스트림에 평문 존재)
+- **[미설정] `OPEN_LAW_OC` 프로덕션 부재** — prod 스트림 진단에서 `evidence_retriever: 법령 조회 실패: OPEN_LAW_OC not configured` 확인. Railway에 OC 변수가 비어있거나 미설정 → #5 법령 근거가 prod에서 동작 안 함. Railway 환경변수 점검 필요.
 
 ---
 
