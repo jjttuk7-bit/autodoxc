@@ -48,6 +48,8 @@ async def run_main_sequence(
     user_input: str,
     llm: LLMClient | None = None,
     attached_skeleton: list[SkeletonNode] | None = None,
+    attachment_name: str | None = None,
+    attachment_text: str | None = None,
     on_skeleton: Callable[[DocType, list[SkeletonNode]], None] | None = None,
     on_facts: Callable[[list[Fact]], None] | None = None,
     on_section: Callable[[DraftSection], None] | None = None,
@@ -69,9 +71,18 @@ async def run_main_sequence(
     ]
 
     # #1a DocTypeIdentifier
+    # 첨부 양식이 있으면 파일명·원문을 분류 근거로 함께 제공 (placeholder 입력보다 신뢰).
+    classify_input = user_input
+    if attachment_name:
+        parts = [f"문서 양식 파일명: {attachment_name}"]
+        if attachment_text and attachment_text.strip():
+            parts.append(f"양식 원문 일부: {attachment_text.strip()[:400]}")
+        if user_input.strip():
+            parts.append(f"사용자 메모: {user_input.strip()}")
+        classify_input = "\n".join(parts)
     identifier = DocTypeIdentifier(llm)
     id_out = await identifier.run(
-        DocTypeIdentifierInput(user_input=user_input)
+        DocTypeIdentifierInput(user_input=classify_input)
     )
 
     # #1b SkeletonComposer
@@ -83,7 +94,10 @@ async def run_main_sequence(
     else:
         composer = SkeletonComposer(llm)
         comp_out = await composer.run(
-            SkeletonComposerInput(doc_type=id_out.doc_type)
+            SkeletonComposerInput(
+                doc_type=id_out.doc_type,
+                attachment_text=attachment_text,
+            )
         )
         skeleton = comp_out.skeleton
     if composer is not None and composer.last_error:

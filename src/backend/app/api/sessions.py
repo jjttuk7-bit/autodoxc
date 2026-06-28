@@ -58,6 +58,7 @@ class SessionContext:
     evidences: dict[str, Evidence] = field(default_factory=dict)
     attached_skeleton: list[SkeletonNode] = field(default_factory=list)
     attachment_name: str | None = None
+    attachment_text: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -204,14 +205,19 @@ async def upload_attachment(
     warnings = [w.message for w in result.warnings]
     nodes = skeleton_from_parse(result, file_id=attachment_id)
 
+    # 파일명·원문은 골격 추출 성공 여부와 무관하게 보관:
+    # - 성공: 그대로 사용
+    # - 실패(PDF 양식 등 제목 구조 없음): doc_type 분류·내용 기반 LLM 골격에 활용
+    ctx.attachment_name = file_name
+    ctx.attachment_text = (result.raw_text or "").strip()[:4000] or None
     if nodes:
         ctx.attached_skeleton = nodes
-        ctx.attachment_name = file_name
-        ctx.touch()
     elif not warnings:
         warnings.append(
-            "제목 구조를 찾지 못해 골격을 추출하지 못했습니다 — 일반 골격 구성으로 진행됩니다."
+            "제목 구조를 찾지 못해 골격을 추출하지 못했습니다 — 파일명·내용을 바탕으로 "
+            "문서 종류를 추정해 골격을 구성합니다."
         )
+    ctx.touch()
 
     return AttachmentUploadResponse(
         attachment_id=attachment_id,
@@ -242,6 +248,8 @@ async def _orchestrate(ctx: SessionContext) -> AsyncGenerator[dict, None]:
         session_id=ctx.session_id,
         user_input=ctx.user_input,
         attached_skeleton=ctx.attached_skeleton or None,
+        attachment_name=ctx.attachment_name,
+        attachment_text=ctx.attachment_text,
         on_skeleton=lambda dt, sk: _set_skeleton(ctx, dt, sk),
         on_facts=lambda fs: _set_facts(ctx, fs),
         on_section=lambda s: _upsert_section(ctx, s),

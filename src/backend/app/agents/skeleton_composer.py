@@ -117,15 +117,25 @@ class SkeletonComposer:
                 ),
             )
 
-        # 시드 없음 → LLM 호출
-        return await self._compose_via_llm(doc_type)
+        # 시드 없음 → LLM 호출 (첨부 원문이 있으면 그 내용을 참고로 제공)
+        return await self._compose_via_llm(doc_type, input.attachment_text)
 
-    async def _compose_via_llm(self, doc_type: DocType) -> SkeletonComposerOutput:
+    async def _compose_via_llm(
+        self, doc_type: DocType, attachment_text: str | None = None
+    ) -> SkeletonComposerOutput:
+        attach_block = ""
+        if attachment_text and attachment_text.strip():
+            snippet = attachment_text.strip()[:1500]
+            attach_block = (
+                "\n\n# 사용자가 첨부한 양식 원문 (이 양식의 항목·구조를 최대한 반영하라)\n"
+                f"{snippet}\n"
+            )
         user_msg = (
             f"문서 종류: {doc_type.ko_name}\n"
             f"canonical id: {doc_type.id}\n"
             f"도메인: {doc_type.domain}\n"
-            f"분류: {' > '.join(doc_type.taxonomy_path) if doc_type.taxonomy_path else '미분류'}\n\n"
+            f"분류: {' > '.join(doc_type.taxonomy_path) if doc_type.taxonomy_path else '미분류'}\n"
+            f"{attach_block}\n"
             f"위 문서의 5개 섹션 골격을 JSON으로 설계하라."
         )
         try:
