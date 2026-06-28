@@ -64,7 +64,13 @@ class DocTypeIdentifier:
     ) -> DocTypeIdentifierOutput:
         text = input.user_input
 
-        # 1차: 키워드 매칭 (시드 빠른 경로, 모드 무관)
+        # 1차: 데이터 시드 키워드 먼저 (구체적 — 예: "행정심판 답변"이 레거시 "행정심판"보다 우선)
+        data_dt = seed_doc_type_by_keyword(text)
+        if data_dt is not None:
+            return DocTypeIdentifierOutput(
+                doc_type=data_dt, confidence=0.92, signals=["시드키워드"]
+            )
+        # 2차: 레거시 키워드 매칭 (외국인·내용증명·행정심판 청구서)
         for kw, dt in _KEYWORD_MAP.items():
             if kw in text:
                 return DocTypeIdentifierOutput(
@@ -72,12 +78,6 @@ class DocTypeIdentifier:
                     confidence=0.92,
                     signals=[f"키워드:{kw}"],
                 )
-        # 데이터 기반 시드 키워드 (seed_docs.py)
-        data_dt = seed_doc_type_by_keyword(text)
-        if data_dt is not None:
-            return DocTypeIdentifierOutput(
-                doc_type=data_dt, confidence=0.92, signals=["시드키워드"]
-            )
 
         # 2차: LLM 구조화 분류
         try:

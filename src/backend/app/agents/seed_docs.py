@@ -189,8 +189,248 @@ _BUSINESS_REGISTRATION = SeedDoc(
 )
 
 
+_LOCAL_TAX_OBJECTION = SeedDoc(
+    id="local-tax-objection",
+    ko_name="이의신청서(지방세)",
+    domain="dispute",
+    keywords=["이의신청"],
+    taxonomy_path=["행정구제", "지방세"],
+    agency="처분 지방자치단체",
+    sections=[
+        SeedSection(
+            "sec_1", "1. 신청인", "이의신청인의 인적사항", "누가 신청하는가?",
+            [
+                SeedPara("성명(법인은 명칭 및 대표자): [[신청인 성명]]", "empty",
+                         {"applicant_name": "[[신청인 성명]]"}),
+                SeedPara("주민등록번호(법인은 사업자등록번호): [[신청인 식별번호]]", "empty",
+                         {"applicant_id": "[[신청인 식별번호]]"}),
+                SeedPara("주소: [[신청인 주소]]", "empty",
+                         {"applicant_address": "[[신청인 주소]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_2", "2. 처분의 내용", "이의신청 대상이 된 부과처분", "어떤 처분에 대한 이의인가?",
+            [
+                SeedPara("처분청: [[처분청]]", "empty", {"agency": "[[처분청]]"}),
+                SeedPara("처분(부과) 일자: [[처분 일자]]", "empty",
+                         {"disposition_date": "[[처분 일자]]"}),
+                SeedPara("세목 및 부과세액: [[세목]] 금 [[부과 세액]]원", "empty",
+                         {"tax_item": "[[세목]]", "tax_amount": "[[부과 세액]]"}),
+                SeedPara("처분을 통지받은 날: [[통지받은 날]]", "empty",
+                         {"notice_date": "[[통지받은 날]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_3", "3. 이의신청 취지", "취소·경정을 구하는 결론", "무엇을 구하는가?",
+            [
+                SeedPara("신청인은 「지방세기본법」 제89조에 따라 아래와 같이 이의신청합니다.",
+                         "evidence_backed", evidence_refs=["ev_local_tax_89"]),
+                SeedPara("처분청이 [[처분 일자]]자 신청인에게 한 [[세목]] 금 [[부과 세액]]원의 "
+                         "부과처분을 취소(또는 경정)한다는 결정을 구합니다.", "empty",
+                         {"disposition_date": "[[처분 일자]]", "tax_item": "[[세목]]",
+                          "tax_amount": "[[부과 세액]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_4", "4. 이의신청 이유", "처분의 위법·부당 사유", "왜 부당한가?",
+            [
+                SeedPara("[[구체적 이의 사유 — 사실오인·법령해석 오류·과세표준 산정 오류 등]]",
+                         "empty",
+                         {"objection_reason": "[[구체적 이의 사유 — 사실오인·법령해석 오류·과세표준 산정 오류 등]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_5", "5. 증거 서류", "주장을 뒷받침할 자료", "무엇으로 입증하는가?",
+            [
+                SeedPara("1. 납세고지서 사본", "defaulted"),
+                SeedPara("2. 그 밖의 증거 서류: [[추가 증거 서류]]", "empty",
+                         {"evidence_docs": "[[추가 증거 서류]]"}),
+            ],
+        ),
+    ],
+)
+
+
+_ADMIN_APPEAL_RESPONSE = SeedDoc(
+    id="administrative-appeal-response",
+    ko_name="행정심판 답변서",
+    domain="dispute",
+    keywords=["행정심판 답변"],
+    taxonomy_path=["행정구제", "행정심판"],
+    agency="행정심판위원회",
+    sections=[
+        SeedSection(
+            "sec_1", "1. 사건의 표시", "사건번호·당사자", "어느 사건인가?",
+            [
+                SeedPara("사건번호: [[사건번호]]", "empty", {"case_no": "[[사건번호]]"}),
+                SeedPara("청구인: [[청구인]]", "empty", {"claimant": "[[청구인]]"}),
+                SeedPara("피청구인(처분청): [[피청구인]]", "empty",
+                         {"respondent": "[[피청구인]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_2", "2. 청구 취지에 대한 답변", "기각·각하 등 구하는 재결", "무엇을 구하는가?",
+            [
+                SeedPara("청구인의 청구를 기각한다는 재결을 구합니다.", "defaulted"),
+            ],
+        ),
+        SeedSection(
+            "sec_3", "3. 청구 원인에 대한 답변", "처분 경위 및 청구 주장에 대한 반박",
+            "처분은 어떻게 이루어졌는가?",
+            [
+                SeedPara("처분 경위: [[처분 경위]]", "empty",
+                         {"disposition_background": "[[처분 경위]]"}),
+                SeedPara("본 처분은 [[근거 법령]]에 따라 적법한 절차를 거쳐 이루어졌습니다.",
+                         "empty", {"applicable_law": "[[근거 법령]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_4", "4. 처분의 적법성", "처분의 적법·정당성 주장", "왜 처분이 적법한가?",
+            [
+                SeedPara("「행정심판법」 제24조에 따라 피청구인은 다음과 같이 답변합니다.",
+                         "evidence_backed", evidence_refs=["ev_admin_appeal_24"]),
+                SeedPara("[[처분의 적법·정당성에 대한 구체적 주장]]", "empty",
+                         {"legality_argument": "[[처분의 적법·정당성에 대한 구체적 주장]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_5", "5. 증거 서류", "처분의 적법성을 입증할 자료", "무엇으로 입증하는가?",
+            [
+                SeedPara("1. 처분 관련 서류 일체", "defaulted"),
+                SeedPara("2. 그 밖의 증거 서류: [[증거 서류]]", "empty",
+                         {"evidence_docs": "[[증거 서류]]"}),
+            ],
+        ),
+    ],
+)
+
+
+_BUSINESS_REPORT = SeedDoc(
+    id="business-report-food-lodging",
+    ko_name="영업신고서(식품·숙박)",
+    domain="permit",
+    keywords=["영업신고"],
+    taxonomy_path=["인허가", "영업신고"],
+    agency="관할 시·군·구청",
+    sections=[
+        SeedSection(
+            "sec_1", "1. 신고인", "영업자의 인적사항", "누가 신고하는가?",
+            [
+                SeedPara("성명(법인은 명칭 및 대표자): [[신고인 성명]]", "empty",
+                         {"applicant_name": "[[신고인 성명]]"}),
+                SeedPara("생년월일(법인은 사업자등록번호): [[신고인 식별번호]]", "empty",
+                         {"applicant_id": "[[신고인 식별번호]]"}),
+                SeedPara("주소: [[신고인 주소]]", "empty",
+                         {"applicant_address": "[[신고인 주소]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_2", "2. 영업소", "영업소의 명칭·소재지·규모", "어디서 영업하는가?",
+            [
+                SeedPara("영업소 명칭(상호): [[영업소 명칭]]", "empty",
+                         {"shop_name": "[[영업소 명칭]]"}),
+                SeedPara("영업소 소재지: [[영업소 소재지]]", "empty",
+                         {"shop_address": "[[영업소 소재지]]"}),
+                SeedPara("영업장 면적: [[영업장 면적]]제곱미터", "empty",
+                         {"shop_area": "[[영업장 면적]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_3", "3. 영업의 종류", "신고하는 영업의 종류", "무슨 영업인가?",
+            [
+                SeedPara("본 신고는 「식품위생법」 제37조 제4항에 따른 영업신고입니다.",
+                         "evidence_backed", evidence_refs=["ev_food_sanitation_37"]),
+                SeedPara("영업의 종류: [[영업 종류 — 휴게음식점·일반음식점·숙박업 등]]", "empty",
+                         {"business_kind": "[[영업 종류 — 휴게음식점·일반음식점·숙박업 등]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_4", "4. 시설 기준 충족", "관계 법령상 시설 기준 충족 확인", "시설 기준을 갖췄는가?",
+            [
+                SeedPara("영업소는 관계 법령이 정하는 시설 기준을 충족합니다.", "defaulted"),
+                SeedPara("주요 시설 개요: [[시설 개요]]", "empty",
+                         {"facility_summary": "[[시설 개요]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_5", "5. 첨부 서류", "신고에 필요한 첨부 서류", "무엇을 첨부하는가?",
+            [
+                SeedPara("1. 영업시설 배치도", "defaulted"),
+                SeedPara("2. 위생교육 이수증", "defaulted"),
+                SeedPara("3. 그 밖의 첨부 서류: [[기타 첨부 서류]]", "empty",
+                         {"other_docs": "[[기타 첨부 서류]]"}),
+            ],
+        ),
+    ],
+)
+
+
+_PRE_DISPOSITION_OPINION = SeedDoc(
+    id="pre-disposition-opinion",
+    ko_name="처분사전통지에 대한 의견제출서",
+    domain="dispute",
+    keywords=["의견제출", "처분사전통지"],
+    taxonomy_path=["행정구제", "의견제출"],
+    agency="처분청",
+    sections=[
+        SeedSection(
+            "sec_1", "1. 의견 제출인", "의견을 제출하는 자의 인적사항", "누가 제출하는가?",
+            [
+                SeedPara("성명(법인은 명칭 및 대표자): [[제출인 성명]]", "empty",
+                         {"submitter_name": "[[제출인 성명]]"}),
+                SeedPara("주소: [[제출인 주소]]", "empty",
+                         {"submitter_address": "[[제출인 주소]]"}),
+                SeedPara("연락처: [[제출인 연락처]]", "empty",
+                         {"submitter_contact": "[[제출인 연락처]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_2", "2. 통지받은 처분의 내용", "사전통지된 예정 처분", "어떤 처분이 예정되었는가?",
+            [
+                SeedPara("처분청: [[처분청]]", "empty", {"agency": "[[처분청]]"}),
+                SeedPara("사전통지를 받은 날: [[통지받은 날]]", "empty",
+                         {"notice_date": "[[통지받은 날]]"}),
+                SeedPara("예정된 처분의 내용: [[예정 처분 내용]]", "empty",
+                         {"planned_disposition": "[[예정 처분 내용]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_3", "3. 의견의 요지", "제출 의견의 핵심", "핵심 주장은?",
+            [
+                SeedPara("제출인은 「행정절차법」 제27조에 따라 다음과 같이 의견을 제출합니다.",
+                         "evidence_backed", evidence_refs=["ev_admin_proc_27"]),
+                SeedPara("의견 요지: [[의견 요지]]", "empty",
+                         {"opinion_summary": "[[의견 요지]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_4", "4. 구체적 의견 및 사유", "사실상·법률상 의견", "왜 그러한가?",
+            [
+                SeedPara("[[구체적 사실상·법률상 의견 및 사유]]", "empty",
+                         {"detailed_opinion": "[[구체적 사실상·법률상 의견 및 사유]]"}),
+            ],
+        ),
+        SeedSection(
+            "sec_5", "5. 첨부 서류", "의견을 뒷받침할 자료", "무엇으로 입증하는가?",
+            [
+                SeedPara("증빙 서류: [[증빙 서류]]", "empty",
+                         {"evidence_docs": "[[증빙 서류]]"}),
+            ],
+        ),
+    ],
+)
+
+
 SEED_DOCS: dict[str, SeedDoc] = {
-    d.id: d for d in (_INFO_DISCLOSURE, _BUSINESS_REGISTRATION)
+    d.id: d
+    for d in (
+        _INFO_DISCLOSURE,
+        _BUSINESS_REGISTRATION,
+        _LOCAL_TAX_OBJECTION,
+        _ADMIN_APPEAL_RESPONSE,
+        _BUSINESS_REPORT,
+        _PRE_DISPOSITION_OPINION,
+    )
 }
 
 SEEDED_DATA_DOC_IDS: set[str] = set(SEED_DOCS)

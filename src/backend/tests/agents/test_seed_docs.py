@@ -12,11 +12,26 @@ from app.agents.seed_docs import (
 
 
 def test_registry_has_seeds() -> None:
-    assert "information-disclosure-request" in SEED_DOCS
-    assert "business-registration" in SEED_DOCS
-    assert is_data_seed("business-registration")
+    for did in (
+        "information-disclosure-request",
+        "business-registration",
+        "local-tax-objection",
+        "administrative-appeal-response",
+        "business-report-food-lodging",
+        "pre-disposition-opinion",
+    ):
+        assert did in SEED_DOCS, did
+        assert is_data_seed(did)
     assert not is_data_seed("administrative-appeal")  # 레거시 시드
     assert not is_data_seed("unknown-doc")
+
+
+def test_all_seeds_render_every_section() -> None:
+    # 모든 시드의 모든 섹션이 빈 facts로도 렌더되는지 (구조 무결성)
+    for did, doc in SEED_DOCS.items():
+        for sec in doc.sections:
+            rendered = render_section(did, sec.id, {})
+            assert rendered is not None and rendered.paragraphs, f"{did}/{sec.id}"
 
 
 def test_keyword_lookup() -> None:

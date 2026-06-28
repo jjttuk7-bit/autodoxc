@@ -76,6 +76,17 @@ async def test_data_seed_keyword_intercepts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_specific_seed_keyword_beats_legacy() -> None:
+    # "행정심판 답변"(시드)이 레거시 "행정심판"(청구서)보다 우선
+    agent = DocTypeIdentifier(DummyLLMClient(lambda s, u, t: "{}"))
+    ans = await agent.run(DocTypeIdentifierInput(user_input="행정심판 답변서 작성"))
+    assert ans.doc_type.id == "administrative-appeal-response"
+    # 단순 "행정심판 청구서"는 레거시 청구서로
+    claim = await agent.run(DocTypeIdentifierInput(user_input="행정심판 청구서 써줘"))
+    assert claim.doc_type.id == "administrative-appeal"
+
+
+@pytest.mark.asyncio
 async def test_llm_classification_used_when_returned() -> None:
     raw = '{"id":"business-registration","ko_name":"사업자등록 신청서","domain":"permit","confidence":0.8}'
 
